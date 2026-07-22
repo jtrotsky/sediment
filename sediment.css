@@ -1,0 +1,40 @@
+/* Sediment — companion styles.
+ *
+ * Load this alongside sediment.js. Only the `svg text` rule is strictly
+ * required: the builders colour text with `fill: currentColor` and size it
+ * here, so without this rule labels render as default black at the wrong size.
+ *
+ * Colour comes from the SVG's inherited `color` — set `color` on the chart host
+ * (or an ancestor) and every label/axis follows it. Pass mark/line colours to
+ * the builders as resolved CSS colour strings (see README).
+ */
+
+svg { display: block; }
+
+svg text {
+  font-family: inherit;
+  font-size: 12px;
+  fill: currentColor;
+  letter-spacing: -0.24px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Optional: styling for the element you pass to `Sediment.tip(el)`. Themeable
+ * via the custom properties below (fallbacks keep it working standalone). */
+.sediment-tip {
+  position: absolute;
+  pointer-events: none;
+  display: none;
+  z-index: 2;
+  white-space: nowrap;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  background: var(--sediment-tip-bg, #fff);
+  color: var(--sediment-tip-ink, #222);
+  border: 1px solid var(--sediment-tip-border, rgba(0, 0, 0, 0.25));
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35);
+}
+.sediment-tip .t { font-size: 11px; margin-bottom: 4px; opacity: 0.7; }
+.sediment-tip .row { display: flex; justify-content: space-between; gap: 16px; }
+.sediment-tip .row span:last-child { font-variant-numeric: tabular-nums; }
