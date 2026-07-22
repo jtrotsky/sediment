@@ -1,21 +1,109 @@
 # Sediment
 
-A small, dependency-free SVG chart toolkit. One file, no framework, no build
-step, no runtime dependencies. It exports a single global, `Sediment`.
+Small, dependency-free SVG charts. One file, no framework, no build step, no
+runtime dependencies. It adds a single global, `Sediment`.
 
-The house style is Tufte-ish: range-frame axes, a dotted hairline grid, direct
-labels at line ends, and a `texture()` encoding that tells series apart by mark
-shape/scale/density instead of colour — so the charts stay legible with no
-colour channel at all.
+The style is Tufte-ish: range-frame axes, a dotted hairline grid, labels sitting
+right on the data. Series tell themselves apart by texture (dot and line
+patterns), not colour, so a chart stays readable with no colour at all.
 
-## Design principle
+## Suggested palette
 
-Every builder takes **resolved values** — colours as CSS colour strings, data as
-plain numbers, text via formatter callbacks. The module carries no app-specific
-knowledge: it never reads your theme, your DOM beyond the host you hand it, or
-any global state. You write a thin adapter that resolves your theme tokens (e.g.
-with `getComputedStyle`) and feeds these builders. That is what keeps it liftable
-into any project.
+Sediment ships no colours of its own. You pass every colour in, so it fits any
+theme. If you want a starting point, this is the warm, high-contrast set the
+charts below were drawn with.
+
+![Suggested palette](images/palette.png)
+
+| Colour | Hex | Role |
+| --- | --- | --- |
+| Cream | `#edf3d7` | ink, marks, lines |
+| Chocolate | `#3e332f` | background |
+| Pistachio | `#81bb8b` | gain |
+| Peach | `#e88b7d` | loss |
+
+Hairlines and grid lines are Cream at 50% opacity, a tint rather than a separate
+colour.
+
+## The charts
+
+### dotPlot
+Items on a shared ordinal axis. Position carries the meaning, dot area carries
+the amount, and a solid line marks the average.
+
+![dotPlot](images/dotPlot.png)
+
+```js
+Sediment.dotPlot({
+  host, levels: ["cash", "conservative", "balanced", "growth", "aggressive"],
+  rows: funds.map(f => ({ pos: f.band, value: f.value, label: f.name, valueLabel: nzd(f.value) })),
+  avgPos: weightedAverage, dotColor: cream, tokens: { hair: border, fg: cream },
+});
+```
+
+### lineChart
+Lines over a time series, range-framed, with the value labelled at the end.
+
+![lineChart](images/lineChart.png)
+
+```js
+Sediment.lineChart({
+  host, xs, series: [{ values: netWorth, color: cream }],
+  tokens: { axis: cream, hair, page: bg }, fmtK, xLabel, endLabel: () => "net worth",
+});
+```
+
+### stackedArea
+Stacked bands over time, each band a texture, totals labelled on the right.
+
+![stackedArea](images/stackedArea.png)
+
+```js
+Sediment.stackedArea({
+  host, xs, n: 4, ink: cream, bg,
+  bands: [{ values: cash, ti: 0, label: "Cash" }, { values: shares, ti: 1, label: "Shares" }, ...],
+  tokens: { surface, axis: cream, hair }, fmtK, xLabel,
+});
+```
+
+### columnChart
+Columns on a shared baseline, positive and negative, with an optional target line.
+
+![columnChart](images/columnChart.png)
+
+```js
+Sediment.columnChart({
+  host, bars: months.map(m => ({ value: m.net, label: m.name })),
+  posColor: gain, negColor: loss, ink: cream, tokens: { border },
+  target: 3000, targetLabel: "goal",
+});
+```
+
+### segmentedBar
+Proportional segments, texture-coded, with optional stepped connector labels.
+
+![segmentedBar](images/segmentedBar.png)
+
+```js
+Sediment.segmentedBar({
+  host, n: 5, total, ink: cream, connectors: true,
+  segments: holdings.map((h, i) => ({ label: h.name, value: h.value, ti: i })),
+  tokens: { border, hair },
+});
+```
+
+### barLineChart
+A textured area for one measure with a line over it for another, so the gap
+between them reads at a glance.
+
+![barLineChart](images/barLineChart.png)
+
+```js
+Sediment.barLineChart({
+  host, xs, bars: invested, line: value, ti: 1, ink: cream,
+  tokens: { axis: cream, hair, page: bg }, fmtK, xLabel,
+});
+```
 
 ## Install
 
@@ -26,104 +114,97 @@ Copy the two files into your project and load them:
 <script src="sediment.js"></script>
 ```
 
-- `sediment.js` — the module (defines `window.Sediment`).
-- `sediment.css` — companion styles. Only the `svg text` rule is strictly
-  required; without it labels render as default black at the wrong size. Text
-  colour is inherited: set `color` on the chart host and every label follows.
+`sediment.js` adds `window.Sediment`. `sediment.css` carries the companion
+styles. Only the `svg text` rule is strictly required; without it labels render
+black at the wrong size. Text colour is inherited, so set `color` on the chart
+host and every label follows.
 
-To track upstream, add this repo as a git submodule and point your build/embed at
-`sediment.js` — a `git submodule update --remote` pulls new versions.
+To track this repo and pull updates, add it as a git submodule and point your
+build at `sediment.js`:
 
-See [`demo.html`](demo.html) for a runnable example (open it in a browser).
-
-## Quick start
-
-```js
-const TIP = Sediment.tip(document.getElementById("tip"));
-Sediment.dotPlot({
-  host: document.getElementById("risk"),
-  rows: [{ pos: 0, value: 74230, label: "Cash PIE", valueLabel: "$74,230" }],
-  levels: ["cash", "conservative", "balanced", "growth", "aggressive"],
-  avgPos: 1.8,
-  dotColor: "#edf3d7",
-  tokens: { hair: "rgba(237,243,215,0.5)", fg: "#edf3d7" },
-  tip: TIP,
-});
+```bash
+git submodule add https://github.com/jtrotsky/sediment.git vendor/sediment
+# later, to update:
+git submodule update --remote vendor/sediment
 ```
 
-## Builders
+`demo.html` renders all of the above from live code if you want to open it and
+poke at it.
 
-Every chart builder takes a single `cfg` object; `host` is the element the SVG is
-appended to (it is sized to the host's width). Colours are resolved CSS strings.
-`tip` is an optional tooltip handle from `Sediment.tip(el)`.
+## How it works
 
-### `dotPlot(cfg)` — items on a shared ordinal axis
+Every builder takes resolved values. Colours are CSS colour strings, data is
+plain numbers, and text comes from formatter callbacks. The module never reads
+your theme, your DOM beyond the host you give it, or any global state. You write
+a thin adapter that resolves your theme (for example with `getComputedStyle`)
+and feeds these builders. That is what keeps it liftable into any project.
+
+## Builder reference
+
+Each builder takes one `cfg` object. `host` is the element the SVG mounts into,
+sized to the host's width. `tip` is an optional tooltip handle from
+`Sediment.tip(el)`.
+
+**dotPlot**
 ```
-host, rowH=22, padT=8, axisPad=30, axisFrac=0.40, rightPad=88,
-rows:[{ pos, value, label, valueLabel, tipHTML }],  // pos = 0..(levels-1)
-levels:[str...],                                    // axis tick labels, left→right
-avgPos,                                             // optional reference-line position (fractional)
-staggerLabels,                                      // allow two-row axis when labels would collide
+host, rowH=22, padT=8, axisPad=30, rightPad=88,
+rows:[{ pos, value, label, valueLabel, tipHTML }],   // pos = 0..(levels-1)
+levels:[str],                                        // axis ticks, left to right
+avgPos,                                              // optional average line position
+staggerLabels,                                       // two-row axis when labels would collide
 dotColor, tokens:{ hair, fg }, tip
 ```
-The left gutter auto-sizes to the longest row label; the ordinal axis staggers to
-two rows only when labels would otherwise overlap. `avgPos` draws a solid vertical
-marker; the row grid is dashed.
 
-### `lineChart(cfg)` — lines over an x-series, range-frame
+**lineChart**
 ```
 host, H=230, padL=56, padR=92, padT=14, padB=26,
-xs:[t...],                          // x values (e.g. epoch ms), ascending
-series:[{ values:[v...], color }],  // one line each; values align to xs
+xs:[t], series:[{ values:[v], color }],
 tokens:{ axis, hair, page },
-fmtK:v=>str, xLabel:(t,first)=>str, endLabel:(seriesIndex)=>str,
-annotateExtremes=false,             // label single-series min & max
-tip, tipHTML:(pointIndex)=>str
+fmtK, xLabel, endLabel, annotateExtremes, tip, tipHTML
 ```
 
-### `stackedArea(cfg)` — stacked bands, texture-coded
+**stackedArea**
 ```
 host, H=230, padL=56, padR=110, padT=14, padB=26,
-xs:[t...],
-bands:[{ values:[v...], ti, label }],  // ti = texture index; stacked in order
-n,                                     // texture band count
-ink, bg,                               // mark colour; fill behind marks
-tokens:{ surface, axis, hair },
-fmtK:v=>str, xLabel:(t,first)=>str, tip, tipHTML:(pointIndex)=>str
+xs:[t], bands:[{ values:[v], ti, label }], n,        // ti = texture index
+ink, bg, tokens:{ surface, axis, hair },
+fmtK, xLabel, tip, tipHTML
 ```
 
-### `columnChart(cfg)` — diverging columns on a baseline
+**columnChart**
 ```
 host, H=160, padL=56, padR=12, padT=14, padB=26,
-bars:[{ value, label, faint }],  // one column each, in order
-posColor, negColor, ink,         // ink = baseline + labels
-tokens:{ border },
-target, targetLabel:str,         // optional dashed reference line
-zeroLabel="$0", tip, tipHTML:(barIndex)=>str
+bars:[{ value, label, faint }],
+posColor, negColor, ink, tokens:{ border },
+target, targetLabel, zeroLabel="$0", tip, tipHTML
 ```
 
-### `segmentedBar(cfg)` — proportional segments, optional connectors
+**segmentedBar**
 ```
 host, barH=24, gap=4, minSeg=24,
-segments:[{ label, value, ti, tipHTML }],  // ti = texture index
-n, total,                                  // texture band count; sum of values
+segments:[{ label, value, ti, tipHTML }], n, total,
 ink, tokens:{ border, hair },
 connectors=false, step=30, topPad=14, labelGap=8, tip
 ```
 
-### `barLineChart(cfg)` — bars with an overlaid line
-See the cfg block above `function barLineChart` in `sediment.js`.
+**barLineChart**
+```
+host, H=230, padL=56, padR=20, padT=14, padB=26,
+xs:[t], bars:[v], line:[v], ti, ink,
+tokens:{ axis, hair, page }, fmtK, xLabel, tip, tipHTML
+```
 
 ## Helpers
 
-- `Sediment.tip(el)` → `{ show(host, x, y, html), hide }` — floating tooltip bound
-  to `el` (style it via the `.sediment-tip` rules in `sediment.css`).
-- `Sediment.texture(svg, i, n, ink, opts)` — pattern fill for band `i` of `n`
-  (the last band is solid). `Sediment.chip(i, n, ink, size)` returns an inline-SVG
-  swatch string of that texture, for legends and tables.
-- `Sediment.svgEl(tag, attrs)`, `frame(host, H)`, `yScale`, `niceTicks`, `grid`,
-  `monthTicks`, `placedMonthTicks` — low-level building blocks.
+- `Sediment.tip(el)` returns `{ show(host, x, y, html), hide }`, a floating
+  tooltip bound to `el`. Style it with the `.sediment-tip` rules in
+  `sediment.css`.
+- `Sediment.texture(svg, i, n, ink)` is the pattern fill for band `i` of `n`
+  (the last band is solid). `Sediment.chip(i, n, ink, size)` returns an
+  inline-SVG swatch of that texture for legends and tables.
+- `Sediment.svgEl`, `frame`, `yScale`, `niceTicks`, `grid`, `monthTicks`,
+  `placedMonthTicks` are the low-level building blocks.
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

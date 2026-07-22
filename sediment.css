@@ -1,12 +1,12 @@
-/* Sediment — companion styles.
+/* Sediment companion styles.
  *
  * Load this alongside sediment.js. Only the `svg text` rule is strictly
  * required: the builders colour text with `fill: currentColor` and size it
  * here, so without this rule labels render as default black at the wrong size.
  *
- * Colour comes from the SVG's inherited `color` — set `color` on the chart host
- * (or an ancestor) and every label/axis follows it. Pass mark/line colours to
- * the builders as resolved CSS colour strings (see README).
+ * Colour comes from the SVG's inherited `color`. Set `color` on the chart host
+ * (or an ancestor) and every label and axis follows it. Pass mark and line
+ * colours to the builders as resolved CSS colour strings (see README).
  */
 
 svg { display: block; }

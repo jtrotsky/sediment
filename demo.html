@@ -3,85 +3,90 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sediment — demo</title>
+<title>Sediment demo</title>
 <link rel="stylesheet" href="sediment.css">
 <style>
-  /* Demo-only chrome — not part of Sediment. */
+  /* Demo-only chrome, not part of Sediment. */
   body { margin: 0; padding: 32px; background: #3e332f; color: #edf3d7;
     font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  h1 { font-size: 14px; font-weight: 400; opacity: 0.7; margin: 0 0 24px; }
-  .card { position: relative; background: rgba(0,0,0,0.25); border-radius: 8px;
-    padding: 21px 16px; margin-bottom: 24px; max-width: 520px; }
-  .card h2 { font-size: 12px; font-weight: 400; margin: 0 0 8px; }
-  /* theme the optional tooltip */
-  :root { --sediment-tip-bg: #edf3d7; --sediment-tip-ink: #3e332f;
-    --sediment-tip-border: rgba(62,51,47,0.5); }
+  h1 { font-size: 14px; font-weight: 400; opacity: 0.7; margin: 0 0 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 16px; max-width: 1100px; }
+  .card { position: relative; background: rgba(0,0,0,0.25); border-radius: 8px; padding: 20px 16px; }
+  .card h2 { font-size: 12px; font-weight: 400; margin: 0 0 10px; }
+  :root { --sediment-tip-bg: #edf3d7; --sediment-tip-ink: #3e332f; --sediment-tip-border: rgba(62,51,47,0.5); }
 </style>
 </head>
 <body>
-<h1>Sediment — dependency-free SVG charts</h1>
-
-<div class="card">
-  <h2>Risk profile — dotPlot</h2>
-  <div id="risk"></div>
+<h1>Sediment: a simple, accessible charting system for financial numbers.</h1>
+<div class="grid">
+  <div class="card"><h2>Risk profile</h2><div id="dotPlot"></div></div>
+  <div class="card"><h2>Net worth</h2><div id="lineChart"></div></div>
+  <div class="card"><h2>Total assets</h2><div id="stackedArea"></div></div>
+  <div class="card"><h2>Monthly savings</h2><div id="columnChart"></div></div>
+  <div class="card"><h2>Holdings</h2><div id="segmentedBar"></div></div>
+  <div class="card"><h2>Invested vs value</h2><div id="barLineChart"></div></div>
 </div>
-
-<div class="card">
-  <h2>Monthly savings — columnChart</h2>
-  <div id="cols"></div>
-</div>
-
-<!-- one shared tooltip element for all charts on the page -->
 <div id="tip" class="sediment-tip"></div>
 
 <script src="sediment.js"></script>
 <script>
+  const cream = "#edf3d7", choc = "#3e332f", border = "rgba(237,243,215,0.5)",
+        hair = "rgba(237,243,215,0.18)", surface = "rgba(0,0,0,0.25)",
+        pistachio = "#81bb8b", peach = "#e88b7d";
   const TIP = Sediment.tip(document.getElementById("tip"));
-  const cream = "#edf3d7", border = "rgba(237,243,215,0.5)";
-  const nzd = v => "$" + Math.round(v).toLocaleString("en-NZ");
+  const el = id => document.getElementById(id);
+  // Absurd, obviously-fictional confectionery money. Compact $Xm / $Xb labels.
+  const M = v => { if (v === 0) return "$0"; const a = Math.abs(v), s = v < 0 ? "-$" : "$";
+    return a >= 1e9 ? s + (a/1e9).toFixed(1) + "b" : s + Math.round(a/1e6) + "m"; };
+  const MO = ["Jan","Feb","Mar","Apr","May","Jun"];
+  const xs = MO.map((_, i) => Date.UTC(2026, i, 15));
+  const xLabel = t => MO[new Date(t).getUTCMonth()];
 
-  // dotPlot: items on a shared ordinal risk axis; area encodes amount.
-  const LEVELS = ["cash", "conservative", "balanced", "growth", "aggressive"];
-  const funds = [
-    { label: "Cash PIE",    pos: 0, value: 74230 },
-    { label: "Simplicity",  pos: 1, value: 200000 },
-    { label: "Smartshares", pos: 2, value: 943034 },
-    { label: "Kernel",      pos: 3, value: 434538 },
-    { label: "Milford",     pos: 4, value: 120000 },
-  ];
-  const total = funds.reduce((a, f) => a + f.value, 0);
-  Sediment.dotPlot({
-    host: document.getElementById("risk"),
-    axisPad: 40,
-    rows: funds.map(f => ({
-      pos: f.pos, value: f.value, label: f.label, valueLabel: nzd(f.value),
-      tipHTML: '<div class="t">' + f.label + '</div><div class="row"><span>' +
-        LEVELS[f.pos] + "</span><span>" + (f.value / total * 100).toFixed(1) + "%</span></div>",
-    })),
-    levels: LEVELS,
-    avgPos: funds.reduce((a, f) => a + f.value * f.pos, 0) / total,
-    dotColor: cream,
-    tokens: { hair: border, fg: cream },
-    staggerLabels: true,
-    tip: TIP,
-  });
+  // Risk profile: funds on a shared risk axis, dot area = amount.
+  const L = ["cash","conservative","balanced","growth","aggressive"];
+  const funds = [["Cocoa Cash",0,24e6],["Marzipan Bonds",1,60e6],["Nougat Balanced",2,300e6],
+    ["Pistachio Growth",3,140e6],["Ghost Pepper",4,40e6]];
+  const fundTotal = funds.reduce((a, r) => a + r[2], 0);
+  Sediment.dotPlot({ host: el("dotPlot"), axisPad: 40, levels: L, dotColor: cream,
+    tokens: { hair: border, fg: cream }, staggerLabels: true, tip: TIP,
+    avgPos: funds.reduce((a, r) => a + r[2] * r[1], 0) / fundTotal,
+    rows: funds.map(r => ({ pos: r[1], value: r[2], label: r[0], valueLabel: M(r[2]),
+      tipHTML: '<div class="t">' + r[0] + '</div>' })) });
 
-  // columnChart: diverging columns on a shared baseline, with a target line.
-  Sediment.columnChart({
-    host: document.getElementById("cols"),
-    bars: [
-      { value: 6200, label: "Feb" },
-      { value: 8100, label: "Mar" },
-      { value: -1400, label: "Apr" },
-      { value: 7550, label: "May" },
-    ],
-    posColor: "#81bb8b", negColor: "#e88b7d", ink: cream,
-    tokens: { border: border },
-    target: 3000, targetLabel: "goal", zeroLabel: "$0",
-    tip: TIP,
-    tipHTML: i => '<div class="row"><span>net</span><span>' +
-      nzd([6200,8100,-1400,7550][i]) + "</span></div>",
-  });
+  // Net worth: a single line over time.
+  Sediment.lineChart({ host: el("lineChart"), xs,
+    series: [{ values: [120,150,190,240,300,380].map(v => v*1e6), color: cream }],
+    tokens: { axis: cream, hair, page: choc }, fmtK: M, xLabel,
+    endLabel: () => "net worth", annotateExtremes: true });
+
+  // Total assets: stacked, texture-coded bands.
+  Sediment.stackedArea({ host: el("stackedArea"), xs, n: 4, padR: 150, ink: cream, bg: choc,
+    tokens: { surface, axis: cream, hair }, fmtK: M, fmtNZD: M, xLabel,
+    bands: [{ values: [20,22,24,25,26,26].map(v => v*1e6), ti: 0, label: "cash" },
+            { values: [180,200,240,300,360,420].map(v => v*1e6), ti: 1, label: "shares" },
+            { values: [400,410,430,470,520,560].map(v => v*1e6), ti: 2, label: "property" }] });
+
+  // Monthly savings: diverging columns with a target line.
+  const net = [6.2,8.1,-1.4,7.5,5.3,6.9].map(v => v*1e6);
+  Sediment.columnChart({ host: el("columnChart"), posColor: pistachio, negColor: peach, ink: cream,
+    tokens: { border }, target: 3e6, targetLabel: "goal", zeroLabel: "$0", tip: TIP,
+    bars: net.map((v, i) => ({ value: v, label: MO[i] })),
+    tipHTML: i => '<div class="row"><span>net</span><span>' + M(net[i]) + '</span></div>' });
+
+  // Holdings: proportional segments with connector labels.
+  const holds = [["Fudge Factory",60e6,0],["Macaron Mills",180e6,1],["Praline Partners",520e6,2],["Sorbet Co",90e6,3]];
+  const holdTotal = holds.reduce((a, r) => a + r[1], 0);
+  Sediment.segmentedBar({ host: el("segmentedBar"), n: 5, total: holdTotal, ink: cream,
+    tokens: { border, hair }, connectors: true, tip: TIP,
+    segments: holds.map(r => ({ label: r[0], value: r[1], ti: r[2],
+      tipHTML: '<div class="t">' + r[0] + '</div><div class="row"><span>' + M(r[1]) + '</span></div>' })) });
+
+  // Invested vs value: textured area under a value line.
+  Sediment.barLineChart({ host: el("barLineChart"), xs, ti: 1, ink: cream,
+    tokens: { axis: cream, hair, page: choc }, fmtK: M, xLabel, H: 250, padB: 44,
+    bars: [40,110,190,270,340,400].map(v => v*1e6),
+    line: [40,120,230,360,500,610].map(v => v*1e6) });
 </script>
 </body>
 </html>
