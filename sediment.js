@@ -8,9 +8,8 @@
 // (e.g. with getComputedStyle) and feeds these builders resolved values.
 //
 // Companion styles live in sediment.css (SVG text uses `fill: currentColor`, and
-// the tip() tooltip expects the `#... tooltip` rules); load it alongside this
-// file. See README.md for the per-builder cfg contracts and demo.html for a
-// runnable example.
+// tip() expects the `.sediment-tip` rules); load it alongside this file. See
+// README.md for the per-builder cfg contracts and demo.html for a runnable example.
 //
 // The house style is Tufte-ish: range-frame axes, a dotted hairline grid, direct
 // labels at line ends, and — the distinctive part — a texture() encoding that
