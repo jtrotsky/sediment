@@ -444,8 +444,13 @@
       return { b, v, ey, oy: ey };
     }).sort((a, c) => a.ey - c.ey);
 
-    // Enforce uniform minimum spacing between label callouts (26px step)
-    const minStep = 26;
+    // De-collide the callouts: push overlapping labels apart by just their own
+    // line height, so each stays on its slice (a straight hairline) whenever the
+    // chart is tall enough, and the connectors bend only where slices genuinely
+    // crowd — a short/squished chart fans them out, a roomy desktop one leaves
+    // them straight. minStep tracks the label height rather than a fixed 26px
+    // gap, which used to force bends even when there was room.
+    const minStep = cfg.labelStep == null ? 18 : cfg.labelStep;
     for (let i = 1; i < labels.length; i++) {
       if (labels[i].ey - labels[i - 1].ey < minStep) {
         labels[i].ey = labels[i - 1].ey + minStep;
