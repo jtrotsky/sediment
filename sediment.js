@@ -250,7 +250,16 @@
     const svg = svgEl("svg", { width: size, height: size, class: "sw-chip" });
     const isSolid = i >= n - 1 || n < 2 || (opts && opts.t === 1);
     if (isSolid) {
-      svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: ink }));
+      // With a tile (bg), the solid mark is inset so the tile frames it — a brown
+      // block on a cream chip stays visible on a dark card. Without a tile it
+      // fills edge-to-edge (marks read against the card behind).
+      if (opts && opts.bg) {
+        svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: opts.bg }));
+        const m = Math.max(size - 4, 0);
+        svg.appendChild(svgEl("rect", { x: 2, y: 2, width: m, height: m, rx: 2, fill: ink }));
+      } else {
+        svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: ink }));
+      }
     } else {
       if (opts && opts.bg)
         svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: opts.bg }));
@@ -872,15 +881,26 @@
     segs.forEach((s, i) => {
       const sx = x, w = ws[i];
       const ti = s.ti != null ? s.ti : i;
-      const solid = ti >= n - 1;
+      // t===1 makes drawMarks null (treated as the solid terminal), so it must
+      // fill solid too — otherwise the biggest segment draws nothing and reads as
+      // an empty gap (the "missing bar" on Stocks & Shares).
+      const solid = ti >= n - 1 || (s.t != null && s.t === 1);
       // Solid terminal band = filled ink; textured bands = a block (cfg.bg dark, or
       // transparent so a dark card shows through) with an explicit whole-mark grid
       // drawn inside, so the pattern has clean edges rather than clipped tiles.
       const rect = svgEl("rect", { x: sx, y: barY, width: w, height: barH,
-        rx: 2, fill: solid ? ink : (cfg.bg || "transparent"), "pointer-events": "all" });
+        rx: 2, fill: (solid && !cfg.bg) ? ink : (cfg.bg || "transparent"), "pointer-events": "all" });
       if (tk.border) { rect.setAttribute("stroke", tk.border); rect.setAttribute("stroke-width", 1); }
       svg.appendChild(rect);
-      if (!solid) drawMarks(svg, { x: sx, y: barY, w, h: barH }, ti, n, ink, { t: s.t != null ? s.t : rankT[i] });
+      if (solid && cfg.bg) {
+        // Solid on a tile: an inset ink block so the tile frames it — same look as
+        // chip()'s solid, so a bar segment matches its swatch.
+        const m = Math.min(3, w / 2, barH / 2);
+        svg.appendChild(svgEl("rect", { x: sx + m, y: barY + m, width: Math.max(0, w - 2 * m),
+          height: Math.max(0, barH - 2 * m), rx: 1.5, fill: ink, "pointer-events": "none" }));
+      } else if (!solid) {
+        drawMarks(svg, { x: sx, y: barY, w, h: barH }, ti, n, ink, { t: s.t != null ? s.t : rankT[i] });
+      }
       if (cfg.tip && s.tipHTML) {
         rect.addEventListener("pointermove", () => {
           const r = svg.getBoundingClientRect();
