@@ -250,16 +250,12 @@
     const svg = svgEl("svg", { width: size, height: size, class: "sw-chip" });
     const isSolid = i >= n - 1 || n < 2 || (opts && opts.t === 1);
     if (isSolid) {
-      // With a tile (bg), the solid mark is inset so the tile frames it — a brown
-      // block on a cream chip stays visible on a dark card. Without a tile it
-      // fills edge-to-edge (marks read against the card behind).
-      if (opts && opts.bg) {
-        svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: opts.bg }));
-        const m = Math.max(size - 4, 0);
-        svg.appendChild(svgEl("rect", { x: 2, y: 2, width: m, height: m, rx: 2, fill: ink }));
-      } else {
-        svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: ink }));
-      }
+      // Solid fills edge to edge, tile or no tile — the same rule the bar
+      // segments follow (including solidFill), so a holding's chip and its bar
+      // segment read identically. (The tile used to show through as a 2px
+      // frame, which made a solid value look like an outlined box.)
+      svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2,
+        fill: (opts && opts.solidFill) || ink }));
     } else {
       if (opts && opts.bg)
         svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: opts.bg }));
@@ -885,20 +881,24 @@
       // fill solid too — otherwise the biggest segment draws nothing and reads as
       // an empty gap (the "missing bar" on Stocks & Shares).
       const solid = ti >= n - 1 || (s.t != null && s.t === 1);
-      // Solid terminal band = filled ink; textured bands = a block (cfg.bg dark, or
-      // transparent so a dark card shows through) with an explicit whole-mark grid
-      // drawn inside, so the pattern has clean edges rather than clipped tiles.
+      // Solid band = one colour filling the segment edge to edge (Figma: plain
+      // blocks, no texture). It used to be inset 3px on a tile so the tile
+      // framed it, which read as an outlined box rather than a solid value.
+      // The fill is the mark ink by default — solid is the top of the density
+      // ramp — but a bar whose marks are DARKER than the card behind it must
+      // pass solidFill, or its biggest segment sinks into the background.
+      // Textured bands keep the block (cfg.bg, or transparent so a dark card
+      // shows through) with an explicit whole-mark grid drawn inside, so the
+      // pattern has clean edges rather than clipped tiles.
       const rect = svgEl("rect", { x: sx, y: barY, width: w, height: barH,
-        rx: 2, fill: (solid && !cfg.bg) ? ink : (cfg.bg || "transparent"), "pointer-events": "all" });
-      if (tk.border) { rect.setAttribute("stroke", tk.border); rect.setAttribute("stroke-width", 1); }
+        rx: 2, fill: solid ? (cfg.solidFill || ink) : (cfg.bg || "transparent"), "pointer-events": "all" });
+      // The outline frames a TEXTURED block, whose fill is the card showing
+      // through — without it the marks would float with no edge. A solid
+      // segment is its own shape, so an outline there just draws a border round
+      // a filled block, the same artefact as the inset.
+      if (tk.border && !solid) { rect.setAttribute("stroke", tk.border); rect.setAttribute("stroke-width", 1); }
       svg.appendChild(rect);
-      if (solid && cfg.bg) {
-        // Solid on a tile: an inset ink block so the tile frames it — same look as
-        // chip()'s solid, so a bar segment matches its swatch.
-        const m = Math.min(3, w / 2, barH / 2);
-        svg.appendChild(svgEl("rect", { x: sx + m, y: barY + m, width: Math.max(0, w - 2 * m),
-          height: Math.max(0, barH - 2 * m), rx: 1.5, fill: ink, "pointer-events": "none" }));
-      } else if (!solid) {
+      if (!solid) {
         drawMarks(svg, { x: sx, y: barY, w, h: barH }, ti, n, ink, { t: s.t != null ? s.t : rankT[i] });
       }
       if (cfg.tip && s.tipHTML) {
