@@ -203,10 +203,10 @@
     return "url(#" + id + ")";
   }
 
-  // drawMarks(svg, box, i, n, ink, opts) — the same ladder drawn as explicit WHOLE
-  // marks inside a box: any mark that would cross an edge is skipped for rectangular
-  // patterns, but hexagonal patterns are generated slightly larger and clipped
-  // to ensure clean edges and full coverage.
+  // drawMarks(svg, box, i, n, ink, opts) — the same ladder drawn as explicit
+  // marks inside a box: the grid is generated slightly larger than the box and
+  // clipped to it, so edge marks are partially visible and the pattern reaches
+  // every edge — no bare-background margin, for rectangular and hex tiles alike.
   // Appends a non-interactive <g>; the caller draws the box fill/border.
   function drawMarks(svg, box, i, n, ink, opts) {
     const t = bandT(i, n, opts);
@@ -216,9 +216,13 @@
     const fit = Math.min(box.w, box.h);
     if (pitch > fit && pitch > 0) { const k = fit / pitch; pitch *= k; m *= k; } // ≥1 fits
     const rowH = P.hex ? pitch * 0.866 : pitch;
-    const rows = Math.max(1, Math.round(box.h / rowH));
-    const cols = Math.max(1, Math.round(box.w / pitch));
-    const ox = box.x + (box.w - cols * pitch) / 2;    // centre the grid → even margins
+    // ceil (not round): the grid always covers the box, so the centred overflow
+    // rows/cols cross the edges and are clipped — marks HIT the top and bottom
+    // edges instead of leaving a margin of bare background that blends the
+    // pattern into the card. Same treatment for rectangular and hex tiles.
+    const rows = Math.max(1, Math.ceil(box.h / rowH));
+    const cols = Math.max(1, Math.ceil(box.w / pitch));
+    const ox = box.x + (box.w - cols * pitch) / 2;    // centre the grid → symmetric edge bleed
     const oy = box.y + (box.h - rows * rowH) / 2;
 
     let defs = svg.querySelector("defs");
