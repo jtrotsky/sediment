@@ -288,6 +288,7 @@
   //   xLabel:(t,first)=>str,              // axis tick text
   //   endLabel:(seriesIndex)=>str,        // text at each line's right end
   //   annotateExtremes:false,             // label single-series min & max points
+  //   dotGap:14,                          // min px between point dots (0 = every point)
   //   tip, tipHTML:(pointIndex)=>str      // optional hover tooltip
   // }
   function lineChart(cfg) {
@@ -330,7 +331,28 @@
         svg.appendChild(svgEl("path", { d, fill: "none", stroke: s.color,
           "stroke-width": 1.75, "stroke-linejoin": "round", "stroke-linecap": "round" }));
       }
-      for (const p of pts) svg.appendChild(svgEl("circle", {
+      // Dots mark the points; they do not carry the data — the LINE does, and
+      // the hover hairline still finds every point whether or not it wears one.
+      // So thin them to what the eye can resolve. A dot is 4px across inside a
+      // 1.5px page-coloured ring, and when a series changes cadence — monthly
+      // history, then daily once a cron starts writing — the dense end packs
+      // them 2px apart. The rings then overdraw each other's fills and the last
+      // month of an 11-month chart renders as a smear in the PAGE colour, which
+      // reads as a rendering fault sitting exactly where the newest data is.
+      //
+      // Walking from the end backwards is what keeps the newest point drawn:
+      // that dot is the one the end-label names, and thinning from the left
+      // would drop it whenever the spacing fell out that way.
+      // 14px is a shade over twice a dot's outer width, so they read as separate
+      // marks rather than a bead chain. It is deliberately a PIXEL rule, not a
+      // calendar one: it thins to roughly a dot a month on a multi-year chart
+      // and a dot a week on a year, without either the chart or the caller
+      // having to know what the x-axis measures.
+      const gap = cfg.dotGap == null ? 14 : cfg.dotGap;
+      const dots = [];
+      for (let i = pts.length - 1; i >= 0; i--)
+        if (!dots.length || dots[dots.length - 1][0] - pts[i][0] >= gap) dots.push(pts[i]);
+      for (const p of dots) svg.appendChild(svgEl("circle", {
         cx: p[0], cy: p[1], r: pts.length > 1 ? 2 : 3.5,
         fill: s.color, stroke: tk.page, "stroke-width": 1.5 }));
       // Optional right-hand legend (skipped when cfg.endLabel is absent, e.g. a
