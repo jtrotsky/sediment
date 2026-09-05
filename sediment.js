@@ -352,8 +352,15 @@
       const dots = [];
       for (let i = pts.length - 1; i >= 0; i--)
         if (!dots.length || dots[dots.length - 1][0] - pts[i][0] >= gap) dots.push(pts[i]);
+      // data-si tags each dot with its series. Callers that post-process the
+      // chart (trimming a line to half the timeline, dropping a reference
+      // series' dots) can then select by series instead of counting elements:
+      // the thinning above makes the dot count per series variable, so any
+      // caller doing index arithmetic over a flat circle list is wrong the
+      // moment two series thin differently. Dots are appended newest-first, so
+      // the first dot carrying a given data-si is that series' right-hand end.
       for (const p of dots) svg.appendChild(svgEl("circle", {
-        cx: p[0], cy: p[1], r: pts.length > 1 ? 2 : 3.5,
+        cx: p[0], cy: p[1], r: pts.length > 1 ? 2 : 3.5, "data-si": si,
         fill: s.color, stroke: tk.page, "stroke-width": 1.5 }));
       // Optional right-hand legend (skipped when cfg.endLabel is absent, e.g. a
       // single-series tile that names the line in its own heading).
