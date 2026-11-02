@@ -11,29 +11,31 @@
 // tip() expects the `.sediment-tip` rules); load it alongside this file. See
 // README.md for the per-builder cfg contracts and demo.html for a runnable example.
 //
-// The house style is Tufte-ish: range-frame axes, a dotted hairline grid, direct
-// labels at line ends, and — the distinctive part — a texture() encoding that
-// tells series apart by mark shape/scale/density instead of colour, so the charts
-// stay legible with no colour channel at all (the accessibility win).
+// The house style is Tufte-ish: range-frame axes and no grid, lines named at
+// their right end with their latest value, comparisons and events drawn on the
+// chart, and identity that never rests on colour alone — lines differ by dash
+// pattern, bands by a solid tint whose depth follows the band's size.
 //
 // Public API (all under window.Sediment):
 //   svgEl(tag, attrs)                     low-level SVG element
 //   frame(host, H)                        -> {svg, W, H}; appends a responsive svg
 //   yScale(min,max,y0,y1) -> v=>y         linear scale
 //   niceTicks(min,max,n) -> [t...]        rounded tick values
-//   grid(svg, ticks, yFn, x0, x1, opts)   dotted gridlines + y labels
+//   axisTicks(min,max) -> [t...]          three to five round tick values
+//   rangeFrame(svg, ticks, yFn, x, opts)  y axis as long as the data, + labels
+//   grid(svg, ticks, yFn, x0, x1, opts)   dotted gridlines + y labels (unused here)
 //   monthTicks / placedMonthTicks         evenly-spaced, de-overlapped month ticks
 //   tip(el) -> {show(host,x,y,html),hide} floating tooltip bound to an element
-//   texture(svg, i, n, ink, opts)         pattern fill for band i of n (last = solid)
-//   chip(i, n, ink, size)                 inline-SVG swatch string of that texture
+//   texture(svg, i, n, ink, opts)         tint fill for band i of n (last = solid)
+//   chip(i, n, ink, size)                 inline-SVG swatch string of that tint
 //   lineChart(cfg) / stackedArea(cfg) / columnChart(cfg) / dotPlot(cfg) /
-//   segmentedBar(cfg)                     chart builders (see each for cfg shape)
+//   segmentedBar(cfg) / barLineChart(cfg) / smallMultiples(cfg)
+//                                         chart builders (see each for cfg shape)
 
 (function (global) {
   "use strict";
   const SVGNS = "http://www.w3.org/2000/svg";
-  let textureSvgSeq = 0;   // per-svg serial so texture pattern ids stay unique
-  let clipPathSeq = 0;     // per-svg serial so clip path ids stay unique
+  let textureSvgSeq = 0;   // per-svg serial so tint pattern ids stay unique
 
   function svgEl(tag, attrs) {
     const e = document.createElementNS(SVGNS, tag);
@@ -62,8 +64,105 @@
     return out;
   }
 
-  // Dotted hairline grid with right-aligned y labels — the quietest grid that
-  // still reads. opts: { hair, label(t)->string, pad=8 }.
+  // A value is drawable when it is a number. null, undefined and NaN are gaps:
+  // missing data is left blank, never drawn as zero.
+  const has = v => v != null && !Number.isNaN(v);
+
+  // Three to five round ticks. Two read as a broken scale (just the ends), and
+  // more than five is a grid by another name.
+  function axisTicks(min, max) {
+    let t = niceTicks(min, max, 4);
+    if (t.length < 3) t = niceTicks(min, max, 6);
+    while (t.length > 5) t = t.filter((_, i) => i % 2 === 0);
+    return t;
+  }
+
+  // Range-frame y axis: a hairline at x only as long as the data runs (lo..hi),
+  // with right-aligned tick labels and no gridlines. label(t, top) is told which
+  // tick is the top one, so a caller can print the unit there once.
+  // opts: { axis, label(t, top)->string, lo, hi, pad=6 }.
+  function rangeFrame(svg, ticks, yFn, x, opts) {
+    const o = opts || {};
+    const axis = o.axis || "currentColor", pad = o.pad == null ? 6 : o.pad;
+    if (o.lo != null && o.hi != null)
+      svg.appendChild(svgEl("line", { x1: x, x2: x, y1: yFn(o.lo), y2: yFn(o.hi),
+        stroke: axis, "stroke-width": 1 }));
+    ticks.forEach((t, i) => {
+      if (!o.label) return;
+      const lb = svgEl("text", { x: x - pad, y: yFn(t) + 4, "text-anchor": "end" });
+      lb.textContent = o.label(t, i === ticks.length - 1);
+      svg.appendChild(lb);
+    });
+  }
+
+  // A line's path through its points, lifting the pen over gaps.
+  function gapPath(pts) {
+    let d = "", pen = false;
+    for (const p of pts) {
+      if (!p) { pen = false; continue; }
+      d += (d ? " " : "") + (pen ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1);
+      pen = true;
+    }
+    return d;
+  }
+
+  // Dash pattern per series, so lines differ by more than colour. The first
+  // series is solid; an explicit s.dash (including "" for solid) wins.
+  const DASHES = ["", "6 4", "1.5 3", "8 3 1.5 3"];
+  const dashFor = (s, si, count) =>
+    s.dash != null ? s.dash : count > 1 ? DASHES[si % DASHES.length] : "";
+
+  // Reference lines: what the data is compared to (a target, a limit, a goal).
+  // Dashed, thin, lighter than the data, from x0 to x1. Returns their label
+  // slots for the caller's right-margin de-collision.
+  // refs: [{ value, label }]
+  function drawRefs(svg, refs, y, x0, x1, stroke) {
+    return (refs || []).filter(r => has(r.value)).map(r => {
+      svg.appendChild(svgEl("line", { x1: x0, x2: x1, y1: y(r.value), y2: y(r.value),
+        stroke, "stroke-width": 1, "stroke-dasharray": "4 4", class: "sref" }));
+      return { ref: r, ey: y(r.value) };
+    });
+  }
+
+  // Events: a dotted hairline at each x, with its word above the plot so it
+  // never sits on the data. events: [{ t, label }]
+  function drawEvents(svg, events, x, padT, yBottom, W, stroke) {
+    for (const ev of events || []) {
+      const ex = x(ev.t);
+      svg.appendChild(svgEl("line", { x1: ex, x2: ex, y1: padT, y2: yBottom,
+        stroke, "stroke-width": 1, "stroke-dasharray": "1 3", class: "sevent" }));
+      if (!ev.label) continue;
+      const w = String(ev.label).length * 7;
+      const anchor = ex - w / 2 < 0 ? "start" : ex + w / 2 > W ? "end" : "middle";
+      const lb = svgEl("text", { x: ex, y: padT - 5, "text-anchor": anchor, class: "devent" });
+      lb.textContent = ev.label;
+      svg.appendChild(lb);
+    }
+  }
+
+  // Push right-margin labels apart so none overlap, keeping their order.
+  function spread(items, step) {
+    items.sort((a, b) => a.ey - b.ey);
+    for (let i = 1; i < items.length; i++)
+      if (items[i].ey - items[i - 1].ey < step) items[i].ey = items[i - 1].ey + step;
+    return items;
+  }
+
+  // A label at the right margin: name, then its value in the value style.
+  function endText(lx, ey, name, value) {
+    const lb = svgEl("text", { x: lx, y: ey + 4, class: "dlabel" });
+    lb.textContent = name || "";
+    if (value) {
+      const v = svgEl("tspan", { class: "dvalue" });
+      v.textContent = (name ? " " : "") + value;
+      lb.appendChild(v);
+    }
+    return lb;
+  }
+
+  // Dotted hairline grid with right-aligned y labels. Kept for callers that
+  // want it; the builders here draw rangeFrame instead (no gridlines).
+  // opts: { hair, label(t)->string, pad=8 }.
   function grid(svg, ticks, yFn, x0, x1, opts) {
     const o = opts || {};
     const hair = o.hair || "currentColor", label = o.label, pad = o.pad == null ? 8 : o.pad;
@@ -129,38 +228,15 @@
     };
   }
 
-  // ── texture generator ──────────────────────────────────────────────────────
-  // A value is encoded by tiling a small mint square or circle (Figma
-  // pattern-square 1:398 / pattern-circle 1:403). Contrast between keys rides on
-  // two Figma pattern params with BIG jumps — SCALE (mark size, % of source) and
-  // SPACING (gap between marks, % of the mark) — plus shape and tile type
-  // (rectangular / hexagonal). Calibrated to the five reference patterns
-  // (dense→sparse): {square,rect,50%,15%} · {circle,hex,50%,40%} ·
-  // {square,hex,50%,75%} · {circle,hex,20%,400%} · then solid mint / solid choc bg.
-  //
-  // Coverage = 1/(1+spacing)², so SPACING carries magnitude: `t` (0 small … 1
-  // large value) sweeps spacing exponentially 15%→400% (constant ratio = even,
-  // big contrast jumps) so a key's marks pack CLOSE for small values and spread
-  // FAR APART for large ones — the pattern shows scale as well as identity. `i`
-  // (identity index) picks the shape/tile by parity.
-  function markParams(t, i, opts) {
-    const o = opts || {};
-    const src = o.src == null ? 8 : o.src;            // source shape size (px)
-    const spacing = 0.15 * Math.pow(4.0 / 0.15, t);   // 15% … 400% gap
-    const scale = 0.50 - 0.30 * t;                    // 50% … 20% of source
-    const square = i % 2 === 0;                       // shape by identity parity
-    const markSize = src * scale;
-    return { square, hex: !square, markSize, pitch: markSize * (1 + spacing) };
-  }
+  // ── tints ──────────────────────────────────────────────────────────────────
+  // A band is a solid tint of the ink: no hatching, no texture, no moiré. The
+  // tint's depth carries the band's size — `t` (0 small … 1 large, from
+  // valueRanks) sweeps the ink's opacity from light to heavy — and the terminal
+  // band is solid ink. Neighbouring bands are told apart by a hairline seam in
+  // the background colour (stackedArea) or a gap (segmentedBar), and every band
+  // is named on the chart, so identity never rests on the tint alone.
 
-  function markShape(square, cx, cy, m) {
-    return square
-      ? svgEl("rect", { x: cx - m / 2, y: cy - m / 2, width: m, height: m,
-          rx: Math.min(m * 0.14, 1) })
-      : svgEl("circle", { cx, cy, r: m / 2 });
-  }
-
-  // Density parameter for band i of n: opts.t (value magnitude, preferred) else
+  // Depth parameter for band i of n: opts.t (value magnitude, preferred) else
   // the band index. Returns null for the solid terminal band.
   function bandT(i, n, opts) {
     if (i >= n - 1 || n < 2) return null;             // solid band (largest / single)
@@ -172,92 +248,54 @@
     return nTex > 1 ? i / (nTex - 1) : 0;
   }
 
-  // texture(svg, i, n, ink, opts) → a tiled <pattern> fill url, for covering an
-  // irregular shape (e.g. the stacked area). opts: { t, bg, src }. bg fills the
-  // tile behind the marks (light marks on a dark block).
+  // Ink opacity for a band: 0.2 for the smallest, 0.8 short of solid.
+  const tintAlpha = t => 0.2 + 0.6 * t;
+
+  // texture(svg, i, n, ink, opts) → a fill for band i, for covering an irregular
+  // shape (e.g. the stacked area). opts: { t, bg }. bg is the solid colour the
+  // tint is laid over (light ink on a dark block); without it the tint is
+  // translucent over whatever is behind. The name is kept for callers.
   function texture(svg, i, n, ink, opts) {
     const t = bandT(i, n, opts);
     if (t == null) return ink;                        // solid band
     const o = opts || {};
-    const P = markParams(t, i, o);
     let defs = svg.querySelector("defs");
     if (!defs) { defs = svgEl("defs"); svg.insertBefore(defs, svg.firstChild); }
     // Ids must be unique document-wide (url(#id) resolves globally): a per-svg
-    // serial keeps the cream area and the brown bar from colliding.
+    // serial keeps two charts' tints from colliding.
     if (svg.__txid == null) svg.__txid = ++textureSvgSeq;
-    const id = "px-" + svg.__txid + "-" + i + "-" + n;
+    const id = "px-" + svg.__txid + "-" + i + "-" + n + "-" + Math.round(t * 100);
     if (!defs.querySelector("#" + id)) {
-      const pitch = P.pitch, m = P.markSize;
-      const rowH = P.hex ? pitch * 0.866 : pitch;     // hex: tighter, offset rows
-      const tileH = P.hex ? rowH * 2 : rowH;
-      const p = svgEl("pattern", { id, width: pitch, height: tileH,
-        patternUnits: "userSpaceOnUse", fill: ink });
-      if (o.bg) p.appendChild(svgEl("rect", { width: pitch, height: tileH, fill: o.bg }));
-      p.appendChild(markShape(P.square, pitch / 2, rowH / 2, m));
-      if (P.hex) {                                    // offset row (halves wrap across the tile)
-        p.appendChild(markShape(P.square, 0, rowH * 1.5, m));
-        p.appendChild(markShape(P.square, pitch, rowH * 1.5, m));
-      }
+      const p = svgEl("pattern", { id, width: 4, height: 4, patternUnits: "userSpaceOnUse" });
+      if (o.bg) p.appendChild(svgEl("rect", { width: 4, height: 4, fill: o.bg }));
+      p.appendChild(svgEl("rect", { width: 4, height: 4, fill: ink, "fill-opacity": tintAlpha(t) }));
       defs.appendChild(p);
     }
     return "url(#" + id + ")";
   }
 
-  // drawMarks(svg, box, i, n, ink, opts) — the same ladder drawn as explicit
-  // marks inside a box: the grid is generated slightly larger than the box and
-  // clipped to it, so edge marks are partially visible and the pattern reaches
-  // every edge — no bare-background margin, for rectangular and hex tiles alike.
-  // Appends a non-interactive <g>; the caller draws the box fill/border.
+  // drawMarks(svg, box, i, n, ink, opts) — the same tint laid over a box the
+  // caller has already drawn (its bg fill and border). Appends a
+  // non-interactive <g>, so the caller's own rects stay the svg's direct
+  // children. The name is kept for callers.
   function drawMarks(svg, box, i, n, ink, opts) {
     const t = bandT(i, n, opts);
-    if (t == null) return;                            // solid band: no marks
-    const P = markParams(t, i, opts);
-    let pitch = P.pitch, m = P.markSize;
-    const fit = Math.min(box.w, box.h);
-    if (pitch > fit && pitch > 0) { const k = fit / pitch; pitch *= k; m *= k; } // ≥1 fits
-    const rowH = P.hex ? pitch * 0.866 : pitch;
-    // ceil (not round): the grid always covers the box, so the centred overflow
-    // rows/cols cross the edges and are clipped — marks HIT the top and bottom
-    // edges instead of leaving a margin of bare background that blends the
-    // pattern into the card. Same treatment for rectangular and hex tiles.
-    const rows = Math.max(1, Math.ceil(box.h / rowH));
-    const cols = Math.max(1, Math.ceil(box.w / pitch));
-    const ox = box.x + (box.w - cols * pitch) / 2;    // centre the grid → symmetric edge bleed
-    const oy = box.y + (box.h - rows * rowH) / 2;
-
-    let defs = svg.querySelector("defs");
-    if (!defs) { defs = svgEl("defs"); svg.insertBefore(defs, svg.firstChild); }
-    const clipId = "tx-clip-" + (++clipPathSeq);
-    const cp = svgEl("clipPath", { id: clipId });
-    cp.appendChild(svgEl("rect", { x: box.x, y: box.y, width: box.w, height: box.h, rx: 2 }));
-    defs.appendChild(cp);
-
-    const g = svgEl("g", { fill: ink, "pointer-events": "none", "clip-path": "url(#" + clipId + ")" });
-
-    for (let r = -1; r <= rows; r++) {
-      const cy = oy + r * rowH + rowH / 2;
-      const xoff = (P.hex && (r % 2 !== 0)) ? pitch / 2 : 0;  // hexagonal: offset odd rows
-      for (let c = -1; c <= cols; c++) {
-        const cx = ox + c * pitch + pitch / 2 + xoff;
-        const overlaps = cx + m / 2 >= box.x && cx - m / 2 <= box.x + box.w
-                      && cy + m / 2 >= box.y && cy - m / 2 <= box.y + box.h;
-        if (overlaps) g.appendChild(markShape(P.square, cx, cy, m));
-      }
-    }
+    if (t == null) return;                            // solid band: caller fills it
+    const g = svgEl("g", { "pointer-events": "none" });
+    g.appendChild(svgEl("rect", { x: box.x, y: box.y, width: box.w, height: box.h, rx: 2,
+      fill: ink, "fill-opacity": tintAlpha(t) }));
     svg.appendChild(g);
   }
 
-  // A standalone inline-SVG swatch of band i (for HTML table rows) — explicit
-  // whole marks so the swatch edges are clean too. opts.t sets its density.
+  // A standalone inline-SVG swatch of band i (for HTML table rows and tooltips).
+  // opts.t sets its depth; opts.bg the colour under the tint.
   function chip(i, n, ink, size, opts) {
     size = size || 16;
     const svg = svgEl("svg", { width: size, height: size, class: "sw-chip" });
     const isSolid = i >= n - 1 || n < 2 || (opts && opts.t === 1);
     if (isSolid) {
-      // Solid fills edge to edge, tile or no tile — the same rule the bar
-      // segments follow (including solidFill), so a holding's chip and its bar
-      // segment read identically. (The tile used to show through as a 2px
-      // frame, which made a solid value look like an outlined box.)
+      // Solid fills edge to edge, the same rule the bar segments follow
+      // (including solidFill), so a holding's chip and its segment match.
       svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2,
         fill: (opts && opts.solidFill) || ink }));
     } else {
@@ -268,7 +306,7 @@
     return svg.outerHTML;
   }
 
-  // Rank each value 0..1 (smallest → largest) so callers can drive texture
+  // Rank each value 0..1 (smallest → largest) so callers can drive tint
   // density by magnitude: small values pack close, large values spread apart.
   function valueRanks(values) {
     const order = values.map((_, i) => i).sort((a, b) => values[a] - values[b]);
@@ -280,24 +318,33 @@
 
   // ── line chart over an x-series, Tufte range-frame ──
   // cfg: {
-  //   host, H=230, padL=56, padR=92, padT=14, padB=26,
+  //   host, H=230, padL=56, padR=92, padT=14 (22 with events), padB=26,
   //   xs:[t...],                          // x values (e.g. epoch ms), ascending
-  //   series:[{ values:[v...], color }],  // one line each; values align to xs
-  //   tokens:{ axis, hair, page },        // resolved colours
-  //   fmtK:v=>str,                        // compact y/extreme labels
+  //   series:[{ values:[v...], color, dash }], // one line each; values align to xs;
+  //                                       // null = no data (the line breaks);
+  //                                       // dash defaults by index when >1 series
+  //   tokens:{ axis, hair, page, ref },   // resolved colours (ref defaults to hair)
+  //   fmtK:v=>str,                        // compact value labels
+  //   fmtTick:(v,top)=>str,               // y tick labels (default fmtK); top = the
+  //                                       // highest tick, where the unit goes once
   //   xLabel:(t,first)=>str,              // axis tick text
-  //   endLabel:(seriesIndex)=>str,        // text at each line's right end
+  //   endLabel:(seriesIndex)=>str,        // name at each line's right end
+  //   endValue:(seriesIndex)=>str,        // its latest value, printed after the name
+  //   refs:[{ value, label, showValue }], // comparison lines, named with their value
+  //                                       // (showValue:false for a narrow gutter)
+  //   events:[{ t, label }],              // dotted hairline + word above the plot
   //   annotateExtremes:false,             // label single-series min & max points
+  //   extremeLabel:(v,t,kind)=>str,       // kind "max"|"min"; default "value · time"
   //   dotGap:14,                          // min px between point dots (0 = every point)
   //   tip, tipHTML:(pointIndex)=>str      // optional hover tooltip
   // }
   function lineChart(cfg) {
     const host = cfg.host;
     host.innerHTML = "";
-    const xs = cfg.xs, series = cfg.series;
+    const xs = cfg.xs, series = cfg.series, refs = cfg.refs || [], events = cfg.events || [];
     const padL = cfg.padL == null ? 56 : cfg.padL;
     const padR = cfg.padR == null ? (series.length > 1 ? 110 : 92) : cfg.padR;
-    const padT = cfg.padT == null ? 14 : cfg.padT;
+    const padT = cfg.padT == null ? (events.length ? 22 : 14) : cfg.padT;
     const padB = cfg.padB == null ? 26 : cfg.padB;
     const H = cfg.H == null ? 230 : cfg.H;
     const tk = cfg.tokens || {};
@@ -306,12 +353,16 @@
     const x = t => xs.length === 1 ? (padL + W - padR) / 2
       : padL + (t - t0) / ((t1 - t0) || 1) * (W - padL - padR);
     let vals = [];
-    for (const s of series) vals = vals.concat(s.values);
+    for (const s of series) vals = vals.concat(s.values.filter(has));
+    if (!vals.length) return;
     const lo = Math.min(...vals), hi = Math.max(...vals);
-    const pad = (hi - lo) * 0.12 || Math.abs(hi) * 0.05 || 1;
-    const y = yScale(lo - pad, hi + pad, padT, H - padB);
-    grid(svg, niceTicks(lo - pad, hi + pad, 4), y, padL, W - padR,
-      { hair: tk.hair, label: cfg.fmtK });
+    // Reference lines widen the domain so the comparison is always on the chart.
+    const refVals = refs.map(r => r.value).filter(has);
+    const dLo = Math.min(lo, ...refVals), dHi = Math.max(hi, ...refVals);
+    const pad = (dHi - dLo) * 0.12 || Math.abs(dHi) * 0.05 || 1;
+    const y = yScale(dLo - pad, dHi + pad, padT, H - padB);
+    rangeFrame(svg, axisTicks(dLo - pad, dHi + pad), y, padL - 6,
+      { axis: tk.axis, label: cfg.fmtTick || cfg.fmtK, lo, hi });
     svg.appendChild(svgEl("line", { x1: x(t0), x2: x(t1), y1: H - padB, y2: H - padB,
       stroke: tk.axis, "stroke-width": 1 }));
     placedMonthTicks(t0, t1, x).forEach((t, i) => {
@@ -319,17 +370,25 @@
       lb.textContent = cfg.xLabel(t, i === 0);
       svg.appendChild(lb);
     });
-    // stagger end-labels so they never collide
-    const ends = series.map((s, i) => ({ i, ey: y(s.values[s.values.length - 1]) }))
-      .sort((a, b) => a.ey - b.ey);
-    for (let i = 1; i < ends.length; i++)
-      if (ends[i].ey - ends[i - 1].ey < 15) ends[i].ey = ends[i - 1].ey + 15;
+    drawEvents(svg, events, x, padT, H - padB, W, tk.hair || tk.axis);
+    const refSlots = drawRefs(svg, refs, y, padL, x(t1), tk.ref || tk.hair || tk.axis);
+    // The last drawable point of each series: where its line ends and its label sits.
+    const lastIdx = s => { for (let i = s.values.length - 1; i >= 0; i--) if (has(s.values[i])) return i; return -1; };
+    // stagger end-labels (and reference labels) so they never collide
+    const ends = spread(series.map((s, i) => ({ i, li: lastIdx(s) }))
+      .filter(e => e.li >= 0)
+      .map(e => ({ i: e.i, ey: y(series[e.i].values[e.li]) }))
+      .concat(refSlots), 15);
     series.forEach((s, si) => {
-      const pts = xs.map((t, i) => [x(t), y(s.values[i])]);
-      if (pts.length > 1) {
-        const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-        svg.appendChild(svgEl("path", { d, fill: "none", stroke: s.color,
-          "stroke-width": 1.75, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      const li = lastIdx(s);
+      if (li < 0) return;
+      const dash = dashFor(s, si, series.length);
+      const pts = xs.map((t, i) => has(s.values[i]) ? [x(t), y(s.values[i])] : null);
+      if (pts.filter(Boolean).length > 1) {
+        const path = svgEl("path", { d: gapPath(pts), fill: "none", stroke: s.color,
+          "stroke-width": 1.75, "stroke-linejoin": "round", "stroke-linecap": dash ? "butt" : "round" });
+        if (dash) path.setAttribute("stroke-dasharray", dash);
+        svg.appendChild(path);
       }
       // Dots mark the points; they do not carry the data — the LINE does, and
       // the hover hairline still finds every point whether or not it wears one.
@@ -351,7 +410,7 @@
       const gap = cfg.dotGap == null ? 14 : cfg.dotGap;
       const dots = [];
       for (let i = pts.length - 1; i >= 0; i--)
-        if (!dots.length || dots[dots.length - 1][0] - pts[i][0] >= gap) dots.push(pts[i]);
+        if (pts[i] && (!dots.length || dots[dots.length - 1][0] - pts[i][0] >= gap)) dots.push(pts[i]);
       // data-si tags each dot with its series. Callers that post-process the
       // chart (trimming a line to half the timeline, dropping a reference
       // series' dots) can then select by series instead of counting elements:
@@ -359,34 +418,45 @@
       // caller doing index arithmetic over a flat circle list is wrong the
       // moment two series thin differently. Dots are appended newest-first, so
       // the first dot carrying a given data-si is that series' right-hand end.
+      const single = pts.filter(Boolean).length === 1;
       for (const p of dots) svg.appendChild(svgEl("circle", {
-        cx: p[0], cy: p[1], r: pts.length > 1 ? 2 : 3.5, "data-si": si,
+        cx: p[0], cy: p[1], r: single ? 3.5 : 2, "data-si": si,
         fill: s.color, stroke: tk.page, "stroke-width": 1.5 }));
-      // Optional right-hand legend (skipped when cfg.endLabel is absent, e.g. a
-      // single-series tile that names the line in its own heading).
+      // Right-hand name and latest value (skipped when cfg.endLabel is absent,
+      // e.g. a single-series tile that names the line in its own heading). The
+      // key is a sample of the line's own stroke, dash and all.
       if (cfg.endLabel) {
         const e = ends.find(e => e.i === si);
-        const lx = x(t1) + 8;
-        svg.appendChild(svgEl("line", { x1: lx, x2: lx + 10, y1: e.ey, y2: e.ey,
-          stroke: s.color, "stroke-width": 3 }));
-        const lb = svgEl("text", { x: lx + 15, y: e.ey + 4, class: "dlabel" });
-        lb.textContent = cfg.endLabel(si);
-        svg.appendChild(lb);
+        const lx = x(xs[li]) + 8;
+        const key = svgEl("line", { x1: lx, x2: lx + 14, y1: e.ey, y2: e.ey,
+          stroke: s.color, "stroke-width": 1.75, class: "skey", "data-si": si });
+        if (dash) key.setAttribute("stroke-dasharray", dash);
+        svg.appendChild(key);
+        svg.appendChild(endText(lx + 19, e.ey, cfg.endLabel(si), cfg.endValue ? cfg.endValue(si) : ""));
       }
       if (cfg.annotateExtremes && series.length === 1 && xs.length > 2) {
-        let mi = 0, ma = 0;
-        s.values.forEach((v, i) => { if (v < s.values[mi]) mi = i; if (v > s.values[ma]) ma = i; });
-        for (const [i, dy] of [[ma, -8], [mi, 16]]) {
+        let mi = -1, ma = -1;
+        s.values.forEach((v, i) => {
+          if (!has(v)) return;
+          if (mi < 0 || v < s.values[mi]) mi = i;
+          if (ma < 0 || v > s.values[ma]) ma = i;
+        });
+        for (const [i, dy, kind] of [[ma, -8, "max"], [mi, 16, "min"]]) {
           // Skip the endpoints — their value is already carried by the axis range
           // and the end of the line, and a label there collides with the y-axis.
-          if (i === 0 || i === xs.length - 1) continue;
+          if (i <= 0 || i === li) continue;
           const el = svgEl("text", { x: x(xs[i]), y: y(s.values[i]) + dy,
             "text-anchor": "middle", class: "dvalue" });
-          el.textContent = cfg.fmtK(s.values[i]);
+          el.textContent = cfg.extremeLabel ? cfg.extremeLabel(s.values[i], xs[i], kind)
+            : cfg.fmtK(s.values[i]) + " · " + cfg.xLabel(xs[i], false);
           svg.appendChild(el);
         }
       }
     });
+    for (const r of ends.filter(e => e.ref)) {
+      svg.appendChild(endText(x(t1) + 8, r.ey, r.ref.label,
+        r.ref.showValue === false ? "" : cfg.fmtK(r.ref.value)));
+    }
     if (cfg.tip && cfg.tipHTML) {
       const hair = svgEl("line", { y1: padT, y2: H - padB, stroke: tk.axis,
         "stroke-width": 1, "stroke-dasharray": "2 3", visibility: "hidden" });
@@ -406,24 +476,28 @@
     }
   }
 
-  // ── stacked area over an x-series, texture-coded bands ──
+  // ── stacked area over an x-series, tinted bands ──
   // cfg: {
-  //   host, H=230, padL=56, padR=110, padT=14, padB=26,
+  //   host, H=230, padL=56, padR=110, padT=14 (22 with events), padB=26,
   //   xs:[t...],
-  //   bands:[{ values:[v...], ti, label }], // ti = texture index; stacked in order
-  //   n,                                    // texture band count
-  //   ink, bg,                              // mark colour; chocolate fill behind marks
-  //   tokens:{surface,axis,hair},
-  //   fmtK:v=>str, xLabel:(t,first)=>str,
+  //   bands:[{ values:[v...], ti, label }], // ti = tint index; stacked in order.
+  //                                         // A date where every band is null is
+  //                                         // a gap: the area breaks there.
+  //   n,                                    // tint band count
+  //   ink, bg,                              // tint colour; solid colour under it
+  //   tokens:{surface,axis,hair,ref},
+  //   fmtK:v=>str, fmtTick:(v,top)=>str, xLabel:(t,first)=>str,
+  //   refs:[{ value, label }], events:[{ t, label }],
   //   tip, tipHTML:(pointIndex)=>str
   // }
   function stackedArea(cfg) {
     const host = cfg.host;
     host.innerHTML = "";
     const xs = cfg.xs, bands = cfg.bands, n = cfg.n, ink = cfg.ink, tk = cfg.tokens || {};
+    const events = cfg.events || [];
     const padL = cfg.padL == null ? (cfg.noAxis ? 0 : 56) : cfg.padL;
     const padR = cfg.padR == null ? 110 : cfg.padR;
-    const padT = cfg.padT == null ? 14 : cfg.padT;
+    const padT = cfg.padT == null ? (events.length ? 22 : 14) : cfg.padT;
     const padB = cfg.padB == null ? (cfg.noAxis ? 10 : 26) : cfg.padB;
     const H = cfg.H == null ? 230 : cfg.H;
     const { svg, W } = frame(host, H);
@@ -431,8 +505,11 @@
     const t0 = xs[0], t1 = xs[xs.length - 1];
     const x = t => single ? (padL + W - padR) / 2
       : padL + (t - t0) / ((t1 - t0) || 1) * (W - padL - padR);
-    const totals = xs.map((_, i) => bands.reduce((a, b) => a + (b.values[i] || 0), 0));
-    const hi = Math.max(...totals) * 1.08 || 1;
+    const present = xs.map((_, i) => bands.some(b => has(b.values[i])));
+    const totals = xs.map((_, i) => bands.reduce((a, b) => a + (has(b.values[i]) ? b.values[i] : 0), 0));
+    const refVals = (cfg.refs || []).map(r => r.value).filter(has);
+    const top = Math.max(...totals, ...refVals);
+    const hi = top * 1.08 || 1;
     const y = yScale(0, hi, padT, H - padB);
 
     if (!cfg.noBg) {
@@ -440,28 +517,53 @@
         height: H - padB - padT, fill: tk.surface, rx: 4 }));
     }
     if (!cfg.noAxis) {
-      grid(svg, niceTicks(0, hi, 4), y, padL, W - padR, { hair: tk.hair, label: cfg.fmtK });
+      rangeFrame(svg, axisTicks(0, hi), y, padL - 6,
+        { axis: tk.axis, label: cfg.fmtTick || cfg.fmtK, lo: 0, hi: Math.max(...totals) });
     }
+    drawEvents(svg, events, x, padT, H - padB, W, tk.hair || tk.axis);
 
+    // Runs of consecutive dates that have data; each is drawn as its own area.
+    const runs = [];
+    present.forEach((p, i) => {
+      if (!p) return;
+      if (runs.length && runs[runs.length - 1].end === i - 1) runs[runs.length - 1].end = i;
+      else runs.push({ start: i, end: i });
+    });
     const lower = xs.map(() => 0);
-    // Density by VALUE (each band's latest total): small bands pack close, large
-    // ones spread far apart, so the texture portrays magnitude as well as identity.
-    const last = xs.length - 1;
+    const seams = [];
+    // Depth by VALUE (each band's latest total): small bands light, large ones
+    // heavy, so the tint carries magnitude as well as identity.
+    let last = xs.length - 1;
+    while (last > 0 && !present[last]) last--;
     const rankT = valueRanks(bands.map(b => b.values[last] || 0));
     bands.forEach((b, bi) => {
       const fill = texture(svg, b.ti, n, ink, { t: b.t != null ? b.t : rankT[bi], bg: cfg.bg });
-      const upper = xs.map((_, i) => lower[i] + (b.values[i] || 0));
+      const upper = xs.map((_, i) => lower[i] + (has(b.values[i]) ? b.values[i] : 0));
       if (single) {
         const bw = 42, cx = x(t0);
         svg.appendChild(svgEl("rect", { x: cx - bw / 2, y: y(upper[0]), width: bw,
           height: Math.max(y(lower[0]) - y(upper[0]), 0), fill }));
       } else {
-        const top = xs.map((t, i) => x(t).toFixed(1) + " " + y(upper[i]).toFixed(1));
-        const bot = xs.map((t, i) => x(t).toFixed(1) + " " + y(lower[i]).toFixed(1)).reverse();
-        svg.appendChild(svgEl("path", { d: "M" + top.join(" L") + " L" + bot.join(" L") + " Z", fill }));
+        for (const r of runs) {
+          const idx = [];
+          for (let i = r.start; i <= r.end; i++) idx.push(i);
+          const topEdge = idx.map(i => x(xs[i]).toFixed(1) + " " + y(upper[i]).toFixed(1));
+          const bot = idx.map(i => x(xs[i]).toFixed(1) + " " + y(lower[i]).toFixed(1)).reverse();
+          svg.appendChild(svgEl("path", { d: "M" + topEdge.join(" L") + " L" + bot.join(" L") + " Z", fill }));
+          if (bi < bands.length - 1) seams.push("M" + topEdge.join(" L"));
+        }
       }
       for (let i = 0; i < xs.length; i++) lower[i] = upper[i];
     });
+    // A hairline seam in the background colour between neighbouring bands, so two
+    // tints of similar depth still read as two bands.
+    const seamColor = cfg.bg || tk.page;
+    if (seamColor && seams.length)
+      svg.appendChild(svgEl("path", { d: seams.join(" "), fill: "none", stroke: seamColor,
+        "stroke-width": 1, "pointer-events": "none" }));
+    for (const r of drawRefs(svg, cfg.refs, y, padL, x(t1), tk.ref || tk.hair || tk.axis))
+      svg.appendChild(endText(padL + 4, r.ey - 6, r.ref.label,
+        r.ref.showValue === false ? "" : cfg.fmtK(r.ref.value)));
 
     if (!single && !cfg.noAxis) {
       svg.appendChild(svgEl("line", { x1: x(t0), x2: x(t1), y1: H - padB, y2: H - padB,
@@ -622,32 +724,33 @@
     yLabel(0, cfg.zeroLabel || "$0");
   }
 
-  // ── area + line combo: textured "invested" area under a value/return line ──
+  // ── area + line combo: tinted "invested" area under a value/return line ──
   // The area is how much you'd put in at each point; the line is what it's worth,
   // so the gap between them reads as the return. Same silhouette language as the
   // stacked-area asset mix. cfg: {
-  //   host, H=230, padL=56, padR=20, padT=14, padB=26,
-  //   xs:[t...], bars:[v...], line:[v...],
-  //   ti,                         // texture-band index for the bars
-  //   ink, tokens:{axis,hair,page},
-  //   fmtK:v=>str, xLabel:(t,first)=>str,
+  //   host, H=230, padL=56, padR=20, padT=14 (22 with events), padB=26,
+  //   xs:[t...], bars:[v...], line:[v...],   // null in line = no data (it breaks)
+  //   ti,                         // tint-band index for the bars
+  //   ink, tokens:{axis,hair,page,ref},
+  //   fmtK:v=>str, fmtTick:(v,top)=>str, xLabel:(t,first)=>str,
+  //   refs:[{ value, label }], events:[{ t, label }],
   //   tip, tipHTML:(i)=>str
   // }
   function barLineChart(cfg) {
     const host = cfg.host;
     host.innerHTML = "";
     const xs = cfg.xs, bars = cfg.bars || [], line = cfg.line || [], tk = cfg.tokens || {};
-    const ink = cfg.ink;
+    const ink = cfg.ink, events = cfg.events || [];
     const padL = cfg.padL == null ? 56 : cfg.padL;
     const padR = cfg.padR == null ? 20 : cfg.padR;
-    const padT = cfg.padT == null ? 14 : cfg.padT;
+    const padT = cfg.padT == null ? (events.length ? 22 : 14) : cfg.padT;
     const padB = cfg.padB == null ? 26 : cfg.padB;
     const H = cfg.H == null ? 230 : cfg.H;
     const { svg, W } = frame(host, H);
     const t0 = xs[0], t1 = xs[xs.length - 1];
     const x = t => xs.length === 1 ? (padL + W - padR) / 2
       : padL + (t - t0) / ((t1 - t0) || 1) * (W - padL - padR);
-    // stacks[x] = [{value, i, t}] textured segments (per fund). When present, the
+    // stacks[x] = [{value, i, t}] tinted segments (per fund). When present, the
     // bars are per-fund stacks and need a 0 baseline so segments sum correctly.
     // Otherwise a single invested bar, with the axis zoomed to the data so the
     // small gap to the value line (the return) stays legible.
@@ -655,23 +758,28 @@
     const barTotals = stacks
       ? stacks.map(segs => segs.reduce((a, s) => a + (s.value > 0 ? s.value : 0), 0))
       : bars;
-    const all = barTotals.concat(line).filter(v => v != null);
+    const all = barTotals.concat(line, (cfg.refs || []).map(r => r.value)).filter(has);
     const dataLo = stacks ? 0 : Math.min(...all);
     const dataHi = Math.max(...all);
     const pad = (dataHi - dataLo) * 0.12 || Math.abs(dataHi) * 0.05 || 1;
     const yLo = stacks ? 0 : dataLo - pad;
     const yHi = dataHi + pad;
     const y = yScale(yLo, yHi, padT, H - padB);
-    grid(svg, niceTicks(yLo, yHi, 4), y, padL, W - padR, { hair: tk.hair, label: cfg.fmtK });
-    svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: H - padB, y2: H - padB,
+    rangeFrame(svg, axisTicks(yLo, yHi), y, padL - 6,
+      { axis: tk.axis, label: cfg.fmtTick || cfg.fmtK, lo: dataLo, hi: dataHi });
+    drawEvents(svg, events, x, padT, H - padB, W, tk.hair || tk.axis);
+    for (const r of drawRefs(svg, cfg.refs, y, x(t0), x(t1), tk.ref || tk.hair || tk.axis))
+      svg.appendChild(endText(x(t0) + 4, r.ey - 6, r.ref.label,
+        r.ref.showValue === false ? "" : cfg.fmtK(r.ref.value)));
+    svg.appendChild(svgEl("line", { x1: x(t0), x2: x(t1), y1: H - padB, y2: H - padB,
       stroke: tk.axis, "stroke-width": 1 }));
     placedMonthTicks(t0, t1, x).forEach((t, i) => {
       const lb = svgEl("text", { x: x(t), y: H - 8, "text-anchor": i ? "middle" : "start" });
       lb.textContent = cfg.xLabel(t, i === 0);
       svg.appendChild(lb);
     });
-    // Invested area: stacked per-fund textured bands (the same silhouette as the
-    // asset-mix stacked area), or a single textured band.
+    // Invested area: stacked per-fund tinted bands (the same silhouette as the
+    // asset-mix stacked area), or a single tinted band.
     const n = cfg.n || 6;
     const areaPath = (upper, lower) => {
       const top = xs.map((t, i) => x(t).toFixed(1) + " " + y(upper[i]).toFixed(1));
@@ -709,15 +817,14 @@
       svg.appendChild(svgEl("path", { d: areaPath(upper, xs.map(() => 0)), fill }));
     }
     // Value/return line.
-    const pts = xs.map((t, i) => [x(t), y(line[i])]);
-    if (pts.length > 1) {
-      const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-      svg.appendChild(svgEl("path", { d, fill: "none", stroke: ink, "stroke-width": 1.75,
+    const pts = xs.map((t, i) => has(line[i]) ? [x(t), y(line[i])] : null);
+    if (pts.filter(Boolean).length > 1) {
+      svg.appendChild(svgEl("path", { d: gapPath(pts), fill: "none", stroke: ink, "stroke-width": 1.75,
         "stroke-linejoin": "round", "stroke-linecap": "round" }));
     }
     // A single end marker rather than a dot at every point — the line reads clean
-    // over the textured area instead of stippled.
-    const end = pts[pts.length - 1];
+    // over the tinted area instead of stippled.
+    const end = pts.filter(Boolean).pop();
     if (end) svg.appendChild(svgEl("circle", { cx: end[0], cy: end[1],
       r: 3.5, fill: ink, stroke: tk.page, "stroke-width": 1.5 }));
     if (cfg.tip && cfg.tipHTML) {
@@ -857,7 +964,7 @@
     });
   }
 
-  // ── segmented bar: texture-coded proportional segments, optional stepped
+  // ── segmented bar: tinted proportional segments, optional stepped
   //    connector labels above (the Figma "Vertical Connector" annotation) ──
   //
   // The connector fix: each label column is ANCHORED TO ITS OWN SEGMENT — the
@@ -871,8 +978,8 @@
   //
   // cfg: {
   //   host, barH=24, gap=4, minSeg=24,
-  //   segments:[{ label, value, ti, tipHTML }], // ti = texture index
-  //   n, total,                                 // texture band count; sum of values
+  //   segments:[{ label, value, ti, tipHTML }], // ti = tint index
+  //   n, total,                                 // tint band count; sum of values
   //   ink, tokens:{ border, hair },
   //   connectors:false,                         // draw the stepped connector labels
   //   step=30, topPad=14, labelGap=8,           // connector geometry
@@ -895,7 +1002,7 @@
     const { svg, W } = frame(host, barY + barH);
     const total = cfg.total != null ? cfg.total : segs.reduce((a, s) => a + s.value, 0);
     // Proportional widths with a min-width clamp; the excess comes off the widest
-    // segment so a sliver of texture never reads as noise.
+    // segment so a sliver of tint never reads as noise.
     const avail = W - gap * (count - 1);
     const ws = segs.map(s => s.value / (total || 1) * avail);
     const MINW = Math.min(minSeg, avail / count);
@@ -904,7 +1011,7 @@
     if (debt > 0) ws[ws.indexOf(Math.max(...ws))] -= debt;
     // Rough monospace advance for overflow detection (px per char at 12px).
     const advance = 7.4;
-    // Density by VALUE: small segments pack close, large ones spread far apart.
+    // Depth by VALUE: small segments light, large ones heavy.
     const rankT = valueRanks(segs.map(s => s.value));
     let x = 0;
     segs.forEach((s, i) => {
@@ -912,27 +1019,28 @@
       const ti = s.ti != null ? s.ti : i;
       // t===1 makes drawMarks null (treated as the solid terminal), so it must
       // fill solid too — otherwise the biggest segment draws nothing and reads as
-      // an empty gap (the "missing bar" on Stocks & Shares).
-      const solid = ti >= n - 1 || (s.t != null && s.t === 1);
+      // an empty gap (the "missing bar" on Stocks & Shares). That holds for the
+      // internal rank too, when the caller passes no t.
+      const t = s.t != null ? s.t : rankT[i];
+      const solid = ti >= n - 1 || t === 1;
       // Solid band = one colour filling the segment edge to edge (Figma: plain
-      // blocks, no texture). It used to be inset 3px on a tile so the tile
-      // framed it, which read as an outlined box rather than a solid value.
-      // The fill is the mark ink by default — solid is the top of the density
-      // ramp — but a bar whose marks are DARKER than the card behind it must
-      // pass solidFill, or its biggest segment sinks into the background.
-      // Textured bands keep the block (cfg.bg, or transparent so a dark card
-      // shows through) with an explicit whole-mark grid drawn inside, so the
-      // pattern has clean edges rather than clipped tiles.
+      // blocks). It used to be inset 3px on a tile so the tile framed it, which
+      // read as an outlined box rather than a solid value. The fill is the ink
+      // by default — solid is the top of the depth ramp — but a bar whose ink
+      // is DARKER than the card behind it must pass solidFill, or its biggest
+      // segment sinks into the background. Tinted bands keep the block
+      // (cfg.bg, or transparent so a dark card shows through) with the tint
+      // laid over it.
       const rect = svgEl("rect", { x: sx, y: barY, width: w, height: barH,
         rx: 2, fill: solid ? (cfg.solidFill || ink) : (cfg.bg || "transparent"), "pointer-events": "all" });
-      // The outline frames a TEXTURED block, whose fill is the card showing
-      // through — without it the marks would float with no edge. A solid
+      // The outline frames a TINTED block, whose fill is the card showing
+      // through — without it a light tint would have no edge. A solid
       // segment is its own shape, so an outline there just draws a border round
       // a filled block, the same artefact as the inset.
       if (tk.border && !solid) { rect.setAttribute("stroke", tk.border); rect.setAttribute("stroke-width", 1); }
       svg.appendChild(rect);
       if (!solid) {
-        drawMarks(svg, { x: sx, y: barY, w, h: barH }, ti, n, ink, { t: s.t != null ? s.t : rankT[i] });
+        drawMarks(svg, { x: sx, y: barY, w, h: barH }, ti, n, ink, { t });
       }
       if (cfg.tip && s.tipHTML) {
         rect.addEventListener("pointermove", () => {
@@ -966,8 +1074,96 @@
     });
   }
 
+  // ── small multiples: one panel per series, stacked on one shared time axis ──
+  // For series that differ in scale, or when the question is each one's shape.
+  // Each panel has its own range frame with its min and max printed, its name
+  // above it, and its latest value at the right end. With shared:true every
+  // panel uses one scale, for when the question is level.
+  // cfg: {
+  //   host, panelH=56, gap=30, padL=56, padR=92, padT=0, padB=26,
+  //   xs:[t...],
+  //   panels:[{ label, values:[v...], color, refs:[{value,label}] }], // null = gap
+  //   shared:false,
+  //   note:str,                  // the encoding, said once for the group
+  //   tokens:{ axis, hair, page, ref },
+  //   fmtK:v=>str, xLabel:(t,first)=>str,
+  //   tip, tipHTML:(pointIndex)=>str
+  // }
+  function smallMultiples(cfg) {
+    const host = cfg.host;
+    host.innerHTML = "";
+    const xs = cfg.xs, panels = cfg.panels, tk = cfg.tokens || {};
+    const padL = cfg.padL == null ? 56 : cfg.padL;
+    const padR = cfg.padR == null ? 92 : cfg.padR;
+    const padT = (cfg.padT == null ? 0 : cfg.padT) + (cfg.note ? 16 : 0);
+    const padB = cfg.padB == null ? 26 : cfg.padB;
+    const panelH = cfg.panelH == null ? 56 : cfg.panelH;
+    const gap = cfg.gap == null ? 30 : cfg.gap;
+    const H = padT + panels.length * (gap + panelH) + 8 + padB;
+    const { svg, W } = frame(host, H);
+    const t0 = xs[0], t1 = xs[xs.length - 1];
+    const x = t => xs.length === 1 ? (padL + W - padR) / 2
+      : padL + (t - t0) / ((t1 - t0) || 1) * (W - padL - padR);
+    if (cfg.note) {
+      const nt = svgEl("text", { x: W - 2, y: 11, "text-anchor": "end", class: "dnote" });
+      nt.textContent = cfg.note;
+      svg.appendChild(nt);
+    }
+    const allVals = [].concat(...panels.map(p => p.values.filter(has)));
+    const gLo = Math.min(...allVals), gHi = Math.max(...allVals);
+    panels.forEach((p, pi) => {
+      const top = padT + pi * (gap + panelH) + gap;
+      const vals = p.values.filter(has);
+      if (!vals.length) return;
+      const lo = cfg.shared ? gLo : Math.min(...vals), hi = cfg.shared ? gHi : Math.max(...vals);
+      const y = yScale(lo, hi, top, top + panelH);
+      const name = svgEl("text", { x: padL, y: top - 8, class: "dlabel" });
+      name.textContent = p.label;
+      svg.appendChild(name);
+      // The panel's own range, printed: its max and its min.
+      rangeFrame(svg, lo === hi ? [hi] : [lo, hi], y, padL - 6,
+        { axis: tk.axis, label: cfg.fmtK, lo: Math.min(...vals), hi: Math.max(...vals) });
+      for (const r of drawRefs(svg, p.refs, y, padL, x(t1), tk.ref || tk.hair || tk.axis))
+        svg.appendChild(endText(x(t1) + 8, r.ey, r.ref.label,
+          r.ref.showValue === false ? "" : cfg.fmtK(r.ref.value)));
+      const pts = xs.map((t, i) => has(p.values[i]) ? [x(t), y(p.values[i])] : null);
+      svg.appendChild(svgEl("path", { d: gapPath(pts), fill: "none", stroke: p.color,
+        "stroke-width": 1.5, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      const end = pts.filter(Boolean).pop();
+      svg.appendChild(svgEl("circle", { cx: end[0], cy: end[1], r: 2.5,
+        fill: p.color, stroke: tk.page, "stroke-width": 1.5 }));
+      const vl = svgEl("text", { x: end[0] + 8, y: end[1] + 4, class: "dvalue" });
+      vl.textContent = cfg.fmtK(vals[vals.length - 1]);
+      svg.appendChild(vl);
+    });
+    const yAxis = H - padB;
+    svg.appendChild(svgEl("line", { x1: x(t0), x2: x(t1), y1: yAxis, y2: yAxis,
+      stroke: tk.axis, "stroke-width": 1 }));
+    placedMonthTicks(t0, t1, x).forEach((t, i) => {
+      const lb = svgEl("text", { x: x(t), y: H - 8, "text-anchor": i ? "middle" : "start" });
+      lb.textContent = cfg.xLabel(t, i === 0);
+      svg.appendChild(lb);
+    });
+    if (cfg.tip && cfg.tipHTML) {
+      const hair = svgEl("line", { y1: padT, y2: yAxis, stroke: tk.axis,
+        "stroke-width": 1, "stroke-dasharray": "2 3", visibility: "hidden" });
+      svg.appendChild(hair);
+      svg.addEventListener("pointermove", ev => {
+        const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
+        let bi = 0;
+        for (let i = 1; i < xs.length; i++)
+          if (Math.abs(x(xs[i]) - px) < Math.abs(x(xs[bi]) - px)) bi = i;
+        hair.setAttribute("x1", x(xs[bi])); hair.setAttribute("x2", x(xs[bi]));
+        hair.setAttribute("visibility", "visible");
+        cfg.tip.show(host, x(xs[bi]) * (r.width / W), padT * (r.height / H), cfg.tipHTML(bi));
+      });
+      svg.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); cfg.tip.hide(); });
+    }
+  }
+
   global.Sediment = {
-    svgEl, frame, yScale, niceTicks, grid, monthTicks, placedMonthTicks,
+    svgEl, frame, yScale, niceTicks, axisTicks, rangeFrame, grid, monthTicks, placedMonthTicks,
     tip, texture, chip, valueRanks, lineChart, barLineChart, stackedArea, columnChart, dotPlot, segmentedBar,
+    smallMultiples,
   };
 })(typeof window !== "undefined" ? window : this);

@@ -3,9 +3,11 @@
 Small, dependency-free SVG charts. One file, no framework, no build step, no
 runtime dependencies. It adds a single global, `Sediment`.
 
-The style is Tufte-ish: range-frame axes, a dotted hairline grid, labels sitting
-right on the data. Series tell themselves apart by texture (dot and line
-patterns), not colour, so a chart stays readable with no colour at all.
+The style is Tufte-ish: range-frame axes and no grid, each line named at its
+right end with its latest value, comparisons and events drawn on the chart.
+Identity never rests on colour alone: lines differ by dash pattern, and bands
+are solid tints whose depth follows their size, each named on the chart. A
+chart stays readable in one ink.
 
 ## Suggested palette
 
@@ -22,8 +24,7 @@ charts below were drawn with.
 | Pistachio | `#81bb8b` | gain |
 | Peach | `#e88b7d` | loss |
 
-Hairlines and grid lines are Cream at 50% opacity, a tint rather than a separate
-colour.
+Hairlines are Cream at 50% opacity, a tint rather than a separate colour.
 
 ## The charts
 
@@ -42,7 +43,9 @@ Sediment.dotPlot({
 ```
 
 ### lineChart
-Lines over a time series, range-framed, with the value labelled at the end.
+Lines over a time series, range-framed, each named at its end with its latest
+value. A null value is a gap: the line breaks rather than dropping to zero.
+Optional reference lines (`refs`) and events (`events`).
 
 ![lineChart](images/lineChart.png)
 
@@ -54,7 +57,7 @@ Sediment.lineChart({
 ```
 
 ### stackedArea
-Stacked bands over time, each band a texture, totals labelled on the right.
+Stacked bands over time, each band a tint, totals labelled on the right.
 
 ![stackedArea](images/stackedArea.png)
 
@@ -80,7 +83,7 @@ Sediment.columnChart({
 ```
 
 ### segmentedBar
-Proportional segments, texture-coded, with optional stepped connector labels.
+Proportional segments, tinted, with optional stepped connector labels.
 
 ![segmentedBar](images/segmentedBar.png)
 
@@ -93,7 +96,7 @@ Sediment.segmentedBar({
 ```
 
 ### barLineChart
-A textured area for one measure with a line over it for another, so the gap
+A tinted area for one measure with a line over it for another, so the gap
 between them reads at a glance.
 
 ![barLineChart](images/barLineChart.png)
@@ -104,6 +107,36 @@ Sediment.barLineChart({
   tokens: { axis: cream, hair, page: bg }, fmtK, xLabel,
 });
 ```
+
+### smallMultiples
+One panel per series, stacked on one shared time axis. Use it when series
+differ in scale, or when the question is each one's shape. Each panel prints its
+own min and max; `shared: true` puts every panel on one scale when the question
+is level.
+
+```js
+Sediment.smallMultiples({
+  host, xs, note: "each on its own scale",
+  panels: funds.map(f => ({ label: f.name, values: f.prices, color: cream })),
+  tokens: { axis: cream, hair, page: bg }, fmtK, xLabel,
+});
+```
+
+## Which chart
+
+Pick by the question, not the shape of the data.
+
+| Question | Builder |
+| --- | --- |
+| What changed? | `lineChart` |
+| How has each one moved, when they differ in scale? | `smallMultiples` |
+| What is it made of, and how has that changed? | `stackedArea` |
+| What is it made of, now? | `segmentedBar` |
+| Which is biggest, or how did each month do? | `columnChart` |
+| Where does each one sit on a scale? | `dotPlot` |
+| How far apart are two measures? | `barLineChart` |
+
+Under about twenty numbers, a table usually beats any of them.
 
 ## Install
 
@@ -158,17 +191,24 @@ dotColor, tokens:{ hair, fg }, tip
 **lineChart**
 ```
 host, H=230, padL=56, padR=92, padT=14, padB=26,
-xs:[t], series:[{ values:[v], color }],
-tokens:{ axis, hair, page },
-fmtK, xLabel, endLabel, annotateExtremes, tip, tipHTML
+xs:[t], series:[{ values:[v], color, dash }],        // null value = gap
+tokens:{ axis, hair, page, ref },
+fmtK, fmtTick(v, top), xLabel, endLabel, endValue,
+refs:[{ value, label, showValue }], events:[{ t, label }],
+annotateExtremes, extremeLabel(v, t, kind), tip, tipHTML
 ```
+
+`fmtTick` formats the y ticks and is told which is the top one, so the unit can
+go there once. Series dash by index when there is more than one (solid, then
+`6 4`, `1.5 3`, `8 3 1.5 3`); `dash: ""` forces solid. Events add 8px to the top
+padding for their labels.
 
 **stackedArea**
 ```
 host, H=230, padL=56, padR=110, padT=14, padB=26,
-xs:[t], bands:[{ values:[v], ti, label }], n,        // ti = texture index
-ink, bg, tokens:{ surface, axis, hair },
-fmtK, xLabel, tip, tipHTML
+xs:[t], bands:[{ values:[v], ti, label }], n,        // ti = tint index
+ink, bg, tokens:{ surface, axis, hair, ref },
+fmtK, fmtTick, xLabel, refs, events, tip, tipHTML
 ```
 
 **columnChart**
@@ -191,7 +231,14 @@ connectors=false, step=30, topPad=14, labelGap=8, tip
 ```
 host, H=230, padL=56, padR=20, padT=14, padB=26,
 xs:[t], bars:[v], line:[v], ti, ink,
-tokens:{ axis, hair, page }, fmtK, xLabel, tip, tipHTML
+tokens:{ axis, hair, page, ref }, fmtK, fmtTick, xLabel, refs, events, tip, tipHTML
+```
+
+**smallMultiples**
+```
+host, panelH=56, gap=30, padL=56, padR=92, padB=26,
+xs:[t], panels:[{ label, values:[v], color, refs }], shared=false, note,
+tokens:{ axis, hair, page, ref }, fmtK, xLabel, tip, tipHTML
 ```
 
 ## Helpers
@@ -199,11 +246,12 @@ tokens:{ axis, hair, page }, fmtK, xLabel, tip, tipHTML
 - `Sediment.tip(el)` returns `{ show(host, x, y, html), hide }`, a floating
   tooltip bound to `el`. Style it with the `.sediment-tip` rules in
   `sediment.css`.
-- `Sediment.texture(svg, i, n, ink)` is the pattern fill for band `i` of `n`
+- `Sediment.texture(svg, i, n, ink)` is the tint fill for band `i` of `n`
   (the last band is solid). `Sediment.chip(i, n, ink, size)` returns an
-  inline-SVG swatch of that texture for legends and tables.
-- `Sediment.svgEl`, `frame`, `yScale`, `niceTicks`, `grid`, `monthTicks`,
-  `placedMonthTicks` are the low-level building blocks.
+  inline-SVG swatch of that tint for tables and tooltips.
+- `Sediment.svgEl`, `frame`, `yScale`, `niceTicks`, `axisTicks`, `rangeFrame`,
+  `monthTicks`, `placedMonthTicks` are the low-level building blocks. `grid`
+  is still exported but no builder draws one.
 
 ## Licence
 
