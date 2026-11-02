@@ -22,8 +22,7 @@ charts below were drawn with.
 | Pistachio | `#81bb8b` | gain |
 | Peach | `#e88b7d` | loss |
 
-Hairlines and grid lines are Cream at 50% opacity, a tint rather than a separate
-colour.
+Hairlines are Cream at 50% opacity, a tint rather than a separate colour.
 
 ## The charts
 
@@ -42,7 +41,10 @@ Sediment.dotPlot({
 ```
 
 ### lineChart
-Lines over a time series, range-framed, with the value labelled at the end.
+Lines over a time series, each named at its end. A null value is a gap: the
+line breaks rather than dropping to zero. Optional range-frame axis
+(`rangeFrame`), latest values (`endValue`), reference lines (`refs`) and events
+(`events`).
 
 ![lineChart](images/lineChart.png)
 
@@ -105,6 +107,36 @@ Sediment.barLineChart({
 });
 ```
 
+### smallMultiples
+One panel per series, stacked on one shared time axis. Use it when series
+differ in scale, or when the question is each one's shape. Each panel prints its
+own min and max; `shared: true` puts every panel on one scale when the question
+is level.
+
+```js
+Sediment.smallMultiples({
+  host, xs, note: "each on its own scale",
+  panels: funds.map(f => ({ label: f.name, values: f.prices, color: cream })),
+  tokens: { axis: cream, hair, page: bg }, fmtK, xLabel,
+});
+```
+
+## Which chart
+
+Pick by the question, not the shape of the data.
+
+| Question | Builder |
+| --- | --- |
+| What changed? | `lineChart` |
+| How has each one moved, when they differ in scale? | `smallMultiples` |
+| What is it made of, and how has that changed? | `stackedArea` |
+| What is it made of, now? | `segmentedBar` |
+| Which is biggest, or how did each month do? | `columnChart` |
+| Where does each one sit on a scale? | `dotPlot` |
+| How far apart are two measures? | `barLineChart` |
+
+Under about twenty numbers, a table usually beats any of them.
+
 ## Install
 
 Copy the two files into your project and load them:
@@ -158,17 +190,26 @@ dotColor, tokens:{ hair, fg }, tip
 **lineChart**
 ```
 host, H=230, padL=56, padR=92, padT=14, padB=26,
-xs:[t], series:[{ values:[v], color }],
-tokens:{ axis, hair, page },
-fmtK, xLabel, endLabel, annotateExtremes, tip, tipHTML
+xs:[t], series:[{ values:[v], color, dash }],        // null value = gap
+tokens:{ axis, hair, page, ref },
+fmtK, fmtTick(v, top), rangeFrame=false, xLabel, endLabel, endValue,
+refs:[{ value, label, showValue }], events:[{ t, label }],
+annotateExtremes, extremeLabel(v, t, kind), tip, tipHTML
 ```
+
+The y axis is the dotted grid unless `rangeFrame` is set, which draws a range
+frame instead. `fmtTick` formats the y ticks and is told which is the top one,
+so with a range frame the unit can go there once; on the grid every tick is the
+top one. Lines are solid unless a series sets `dash` (a stroke-dasharray).
+Extremes are labelled with `fmtK` unless `extremeLabel` is given. Events add 8px
+to the top padding for their labels.
 
 **stackedArea**
 ```
 host, H=230, padL=56, padR=110, padT=14, padB=26,
 xs:[t], bands:[{ values:[v], ti, label }], n,        // ti = texture index
-ink, bg, tokens:{ surface, axis, hair },
-fmtK, xLabel, tip, tipHTML
+ink, bg, tokens:{ surface, axis, hair, ref },
+fmtK, fmtTick, rangeFrame=false, xLabel, refs, events, tip, tipHTML
 ```
 
 **columnChart**
@@ -191,7 +232,15 @@ connectors=false, step=30, topPad=14, labelGap=8, tip
 ```
 host, H=230, padL=56, padR=20, padT=14, padB=26,
 xs:[t], bars:[v], line:[v], ti, ink,
-tokens:{ axis, hair, page }, fmtK, xLabel, tip, tipHTML
+tokens:{ axis, hair, page, ref }, fmtK, fmtTick, rangeFrame=false, xLabel, refs,
+events, tip, tipHTML
+```
+
+**smallMultiples**
+```
+host, panelH=56, gap=30, padL=56, padR=92, padB=26,
+xs:[t], panels:[{ label, values:[v], color, refs }], shared=false, note,
+tokens:{ axis, hair, page, ref }, fmtK, xLabel, tip, tipHTML
 ```
 
 ## Helpers
@@ -202,8 +251,8 @@ tokens:{ axis, hair, page }, fmtK, xLabel, tip, tipHTML
 - `Sediment.texture(svg, i, n, ink)` is the pattern fill for band `i` of `n`
   (the last band is solid). `Sediment.chip(i, n, ink, size)` returns an
   inline-SVG swatch of that texture for legends and tables.
-- `Sediment.svgEl`, `frame`, `yScale`, `niceTicks`, `grid`, `monthTicks`,
-  `placedMonthTicks` are the low-level building blocks.
+- `Sediment.svgEl`, `frame`, `yScale`, `niceTicks`, `axisTicks`, `rangeFrame`,
+  `grid`, `monthTicks`, `placedMonthTicks` are the low-level building blocks.
 
 ## Licence
 
