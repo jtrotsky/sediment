@@ -38,3 +38,38 @@ svg text {
 .sediment-tip .t { font-size: 11px; margin-bottom: 4px; opacity: 0.7; }
 .sediment-tip .row { display: flex; justify-content: space-between; gap: 16px; }
 .sediment-tip .row span:last-child { font-variant-numeric: tabular-nums; }
+
+/* Keyboard focus. A chart with a tooltip takes focus (tabindex="0"). The ring
+ * shows for keyboard focus only, in the chart's own text colour. */
+svg.sediment:focus { outline: none; }
+svg.sediment:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* The optional data table (cfg.table). Plain on purpose: the host page's
+ * table styles take over where it has them. */
+.sediment-data { font-size: 12px; margin-top: 8px; }
+.sediment-data summary { cursor: pointer; }
+.sediment-data table { border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.sediment-data caption { text-align: left; opacity: 0.7; padding-bottom: 4px; }
+.sediment-data th, .sediment-data td { padding: 2px 10px 2px 0; text-align: right; }
+.sediment-data th[scope="row"], .sediment-data thead th:first-child { text-align: left; }
+
+/* Sediment draws no motion of its own. This keeps a host page's transitions
+ * off the chart and its tooltip for people who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  svg.sediment, svg.sediment *, .sediment-tip { transition: none !important; animation: none !important; }
+}
+
+/* Windows high contrast and other forced-colour modes. The browser replaces
+ * page colours with a few system colours, but its handling of SVG fill and
+ * stroke varies. So the chart opts out and maps itself: every line and every
+ * mark becomes CanvasText, every background becomes Canvas. Series still
+ * differ, because they differ by texture and dash, not colour. */
+@media (forced-colors: active) {
+  svg.sediment, svg.sw-chip { forced-color-adjust: none; color: CanvasText; }
+  svg.sediment text { fill: CanvasText; }
+  :is(svg.sediment, svg.sw-chip) :where([stroke]:not([stroke="none"])) { stroke: CanvasText; }
+  :is(svg.sediment, svg.sw-chip) :where([fill]:not([fill="none"]):not([fill="transparent"]):not([fill^="url"])) { fill: CanvasText; }
+  :is(svg.sediment, svg.sw-chip) .sbg { fill: Canvas; }
+  svg.sediment:focus-visible { outline-color: Highlight; }
+  .sediment-tip { border-color: CanvasText; }
+}
