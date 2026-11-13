@@ -5,10 +5,11 @@ no dependencies and no build step, and it tells series apart by texture
 instead of colour. Each chart describes its data to screen readers, and its
 tooltip works from the keyboard.
 
-![A stacked area chart and a segmented bar, drawn in one ink colour. Battery, solar and grid each wear their own texture, and the same texture marks the same source in both charts.](images/hero.svg)
+![Two charts from a personal finance dashboard, in one ink colour on chocolate. A stacked area shows total assets over 2025, with property, index funds, KiwiSaver, cash and shares each in its own texture and named with its share and value. Under it, a segmented bar splits the same assets by how quickly they can be reached: instant, days and locked.](images/hero.svg)
 
-*Synthetic data. Both charts use one ink colour on one background. Battery,
-solar and grid wear the same texture in both, and each is named on the chart.*
+*Synthetic data in NZD. These are two cards from a personal finance
+dashboard, drawn the way it draws them. Each band and segment wears its own
+texture and is named on the chart. The largest is solid.*
 
 The style follows Tufte: a dotted hairline grid or a range-frame axis, and
 labels placed on the data rather than in a legend. Sediment ships no colours.
@@ -20,37 +21,49 @@ You pass every colour in, so it fits any theme.
 <link rel="stylesheet" href="sediment.css">
 <script src="sediment.js"></script>
 
-<div id="chart" style="color: #222"></div>
+<div id="chart" style="color: #edf3d7; background: #3e332f"></div>
 
 <script>
   const host = document.getElementById("chart");
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"];
-  const xs = months.map((_, i) => Date.UTC(2026, i, 1));
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const xs = Array.from({ length: 13 }, (_, i) => Date.UTC(2026, i, 1));
+  const month = t => months[new Date(t).getUTCMonth()];
+  const saved = [24000, 25500, 27000, 28000, 29500, null, 33000];
+  const plan = [33000, 37000, 41000, 45000, 49000, 53000, 57000];
+  const nzd = v => "$" + Math.round(v).toLocaleString("en-NZ");
+  const nzdK = v => "$" + Math.round(v / 1000) + "k";
 
   Sediment.lineChart({
-    host, padL: 64,
-    title: "Grid and solar power, 2026",
+    host, padR: 120, rangeFrame: true,
+    title: "House deposit, saved and planned",
     xs,
     series: [
-      { values: [410, 380, 352, null, 300, 282, 270, 255], color: "#222" },
-      { values: [200, 215, 230, 236, 250, 262, 280, 291], color: "#222", dash: "5 3" },
+      { values: saved.concat(Array(6).fill(null)), color: "#edf3d7" },
+      { values: Array(6).fill(null).concat(plan), color: "#81bb8b", dash: "6 4" },
     ],
-    tokens: { axis: "#222", hair: "rgba(0,0,0,0.3)", page: "#fff" },
-    fmtK: v => v + " kWh",
-    xLabel: t => months[new Date(t).getUTCMonth()],
-    endLabel: i => ["grid", "solar"][i],
-    refs: [{ value: 320, label: "budget" }],
-    events: [{ t: xs[2], label: "panels on" }],
+    tokens: { axis: "#edf3d7", hair: "rgba(237,243,215,0.5)", page: "#3e332f" },
+    fmtK: nzdK, fmtValue: nzd,
+    xLabel: month,
+    fmtX: t => month(t) + " " + new Date(t).getUTCFullYear(),
+    endLabel: i => ["saved", "plan"][i],
+    endValue: i => i ? nzdK(plan[6]) : "",
+    refs: [{ value: 55000, label: "goal" }],
+    events: [{ t: xs[6], label: "now" }],
   });
 </script>
 ```
 
-![The line chart this code draws: a falling solid line named grid with a gap in April, a rising dashed line named solar, a dashed budget line at 320 kWh, and an event marked "panels on" in March.](images/example.svg)
+![The chart this code draws: a solid line named saved rising from $24k in January to $33k in July with a gap in June, then a dashed line named plan rising to $57k next January, across a dashed goal line at $55k. A dotted line marks July as now.](images/example.svg)
 
-The April value is `null`, so the grid line breaks there instead of dropping
-to zero. The solar line is dashed, so the two lines differ in shape as well as
-position. Each line is named at its right end. `title` names the chart for
-screen readers, and Sediment writes the rest of the description from the data
+*Synthetic data.*
+
+The June value is `null`, so the saved line breaks there instead of dropping
+to zero. The plan is dashed, so the two lines differ in shape as well as
+colour. Each is named at its right end. `rangeFrame` draws the y axis only as
+far as the data goes. `title` names the chart for screen readers, and
+`fmtValue` and `fmtX` format the numbers and dates in the description
+Sediment writes, so it reads "$57,000 (Jan 2027)" rather than "57,000 (Jan)"
 (see Accessibility).
 
 ## Install
@@ -130,12 +143,13 @@ This is the README example above, as rendered:
 
 ```html
 <svg viewBox="0 0 672 230" width="100%" height="230" class="sediment"
-     role="img" aria-label="Grid and solar power, 2026"
+     role="img" aria-label="House deposit, saved and planned"
      aria-describedby="sediment-1-desc">
-  <desc id="sediment-1-desc">Line chart, 2 series: grid, solar. Jan to Aug.
-    grid: latest 255 kWh (Aug), low 255 kWh (Aug), high 410 kWh (Jan), no data
-    for Apr. solar: latest 291 kWh (Aug), low 200 kWh (Jan), high 291 kWh (Aug).
-    Reference line: budget 320 kWh. Event: panels on (Mar).</desc>
+  <desc id="sediment-1-desc">Line chart, 2 series: saved, plan. Jan 2026 to
+    Jan 2027. saved: latest $33,000 (Jul 2026), low $24,000 (Jan 2026), high
+    $33,000 (Jul 2026), no data for 7 points. plan: latest $57,000 (Jan 2027),
+    low $33,000 (Jul 2026), high $57,000 (Jan 2027), no data for 6 points.
+    Reference line: goal $55,000. Event: now (Jul 2026).</desc>
   ...
 ```
 
@@ -147,7 +161,7 @@ This is the README example above, as rendered:
   and each series' latest, low and high value with when. It adds reference
   lines, events and missing data. Bar, segment and dot charts list their
   items instead. Pass `desc` as a string to replace it, or as a function to
-  edit it: `desc: auto => "Grid use fell after the panels went on. " + auto`.
+  edit it: `desc: auto => "The plan reaches the goal in December. " + auto`.
 - **Formats.** Values use `fmtValue`, else the builder's own `fmtK` or
   `fmtNZD`. x values use `fmtX`, else `xLabel(t, true)`.
 - **No `<title>` element.** Browsers show an SVG's `<title>` as a native hover
@@ -230,38 +244,49 @@ Hairlines are Cream at 50% opacity, a tint rather than a separate colour.
 
 ## The charts
 
+Each chart below is a card from the same personal finance dashboard, with
+synthetic data in NZD. The company names are made up.
+
 ### dotPlot
 Items on a shared ordinal axis. Position carries the meaning, dot area carries
-the amount, and a solid line marks the average.
+the amount, and a solid line marks the average. Here each fund sits at its
+risk level, and the line marks the average risk, weighted by value.
 
 ![dotPlot](images/dotPlot.svg)
 
 ### lineChart
 Lines over a time series, each named at its end. Opt in to a range-frame axis
 (`rangeFrame`), latest values (`endValue`), reference lines (`refs`) and events
-(`events`).
+(`events`). Here net worth is one line, named by its latest value. The
+minimal example above uses the opt-ins.
 
 ![lineChart](images/lineChart.svg)
 
 ### stackedArea
 Stacked bands over time, each band a texture, with each band's share and latest
-value labelled on the right.
+value labelled on the right. Here grocery spend splits into five groups.
+Texture density follows each group's latest value, so only the largest is
+solid.
 
 ![stackedArea](images/stackedArea.svg)
 
 ### columnChart
-Columns on a shared baseline, positive and negative, with an optional target line.
+Columns on a shared baseline, positive and negative, with an optional target
+line. Here each month's savings meet a $2,000 target. Months that lost money
+go below the line in a second colour, and the month still running is faint.
 
 ![columnChart](images/columnChart.svg)
 
 ### segmentedBar
 Proportional segments, texture-coded, with optional stepped connector labels.
+Here each segment is one holding in a share portfolio.
 
 ![segmentedBar](images/segmentedBar.svg)
 
 ### barLineChart
 A textured area for one measure with a line over it for another, so the gap
-between them reads at a glance.
+between them reads at a glance. Here the area is the money put into three
+funds, stacked with one texture each, and the line is what they are worth.
 
 ![barLineChart](images/barLineChart.svg)
 
@@ -269,7 +294,8 @@ between them reads at a glance.
 One panel per series, stacked on one shared time axis. Use it when series
 differ in scale, or when the question is each one's shape. Each panel prints its
 own min and max. `shared: true` puts every panel on one scale when the question
-is level.
+is level. Here four balances move on very different scales: a mortgage near
+$400k beside cash near $20k.
 
 ![smallMultiples](images/smallMultiples.svg)
 
