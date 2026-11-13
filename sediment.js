@@ -19,6 +19,11 @@
 // events (cfg.events), latest values at line ends (cfg.endValue) and dashed
 // series (s.dash).
 //
+// Accessibility, on every builder: the svg is a named image (role="img",
+// aria-label from cfg.title) with a <desc> written from the data. A chart with
+// a tooltip also opens it from the keyboard and reads it out. cfg.table adds a
+// data table. See "accessibility" below for the shared cfg keys.
+//
 // Public API (all under window.Sediment):
 //   svgEl(tag, attrs)                     low-level SVG element
 //   frame(host, H)                        -> {svg, W, H}; appends a responsive svg
@@ -29,6 +34,7 @@
 //   grid(svg, ticks, yFn, x0, x1, opts)   dotted gridlines + y labels
 //   monthTicks / placedMonthTicks         evenly-spaced, de-overlapped month ticks
 //   tip(el) -> {show(host,x,y,html),hide} floating tooltip bound to an element
+//   describe(svg, {title, desc})          role="img", aria-label and a <desc>
 //   texture(svg, i, n, ink, opts)         pattern fill for band i of n (last = solid)
 //   chip(i, n, ink, size)                 inline-SVG swatch string of that texture
 //   lineChart(cfg) / stackedArea(cfg) / columnChart(cfg) / dotPlot(cfg) /
@@ -51,7 +57,8 @@
   // uses the measured pixel width so 1 user-unit == 1 CSS px at full width.
   function frame(host, H) {
     const W = Math.max(host.clientWidth, 320);
-    const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: H });
+    const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: H,
+      class: "sediment" });
     host.appendChild(svg);
     return { svg, W, H };
   }
@@ -241,6 +248,227 @@
     };
   }
 
+  // ── accessibility ──────────────────────────────────────────────────────────
+  // Every builder ends by naming its svg (role="img", aria-label) and pointing
+  // aria-describedby at a <desc> written from the data. The name is cfg.title,
+  // else the chart kind. There is no <title> element on purpose: browsers show
+  // an svg's <title> as a native hover tooltip over the whole chart, which would
+  // sit on top of the chart's own tooltip.
+  //
+  // Shared cfg keys, on every builder:
+  //   title:str                  accessible name (default: the chart kind)
+  //   desc:str | auto=>str       replace, or edit, the generated description
+  //   fmtValue:v=>str            values in the description, table and announcements
+  //                              (default: the builder's fmtNZD or fmtK if it has
+  //                              one, else the number in the reader's locale)
+  //   fmtX:t=>str                x values there (default xLabel(t, true))
+  //   table:false | true | str   a <details> data table after the chart (str = its summary)
+  //   keyboard                   default on when the chart has a tooltip: the svg
+  //                              takes focus, arrow keys step, Home/End jump,
+  //                              Escape closes, and a polite live region reads the
+  //                              point out. true turns it on without a tooltip,
+  //                              false turns it off.
+  let a11ySeq = 0;
+
+  // Visually hidden but read by screen readers. Set on the element, so it works
+  // without sediment.css.
+  const SR_ONLY = "position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;" +
+    "overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap";
+
+  const fmtPlain = v => Number(v).toLocaleString();
+  const fmtValueOf = (cfg, fallback) => cfg.fmtValue || fallback || fmtPlain;
+  const fmtXOf = cfg => cfg.fmtX || (cfg.xLabel ? t => cfg.xLabel(t, true) : t => String(t));
+
+  // Tooltip HTML as plain words, for the live region. Inline svg (a texture
+  // chip) holds no words, so it is dropped whole before the tags are.
+  function htmlText(h) {
+    return String(h == null ? "" : h)
+      .replace(/<svg[\s\S]*?<\/svg>/gi, " ").replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&amp;/g, "&")
+      .replace(/\s+/g, " ").trim();
+  }
+
+  // describe(svg, { title, desc }) names an svg and attaches its description.
+  // Public, so a caller drawing its own svg with frame() can label it too.
+  // Calling it again on the same svg updates the text.
+  function describe(svg, o) {
+    if (svg.__sid == null) svg.__sid = ++a11ySeq;
+    const id = "sediment-" + svg.__sid + "-desc";
+    svg.setAttribute("role", "img");
+    if (o.title) svg.setAttribute("aria-label", o.title);
+    let d = svg.querySelector("#" + id);
+    if (!d) { d = svgEl("desc", { id }); svg.insertBefore(d, svg.firstChild); }
+    d.textContent = o.desc || "";
+    svg.setAttribute("aria-describedby", id);
+    return svg;
+  }
+
+  // Name, low, high and latest of one series against its x values, with when.
+  function seriesWords(name, values, xs, fv, fx) {
+    let li = -1, lo = -1, hi = -1;
+    const gaps = [];
+    xs.forEach((_, i) => {
+      const v = values[i];
+      if (!has(v)) { gaps.push(i); return; }
+      li = i;
+      if (lo < 0 || v < values[lo]) lo = i;
+      if (hi < 0 || v > values[hi]) hi = i;
+    });
+    if (li < 0) return name + ": no data.";
+    const at = i => fv(values[i]) + " (" + fx(xs[i]) + ")";
+    let s = name + ": latest " + at(li) + ", low " + at(lo) + ", high " + at(hi);
+    if (gaps.length)
+      s += ", no data for " + (gaps.length <= 3 ? gaps.map(i => fx(xs[i])).join(", ") : gaps.length + " points");
+    return s + ".";
+  }
+
+  const xRange = (xs, fx) => xs.length ? (xs.length === 1 ? fx(xs[0]) : fx(xs[0]) + " to " + fx(xs[xs.length - 1])) + "." : "";
+  const listOf = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+  function refWords(refs, fv) {
+    const r = (refs || []).filter(r => has(r.value));
+    if (!r.length) return "";
+    return (r.length === 1 ? "Reference line: " : "Reference lines: ") +
+      r.map(r => (r.label ? r.label + " " : "") + fv(r.value)).join(", ") + ".";
+  }
+
+  function eventWords(events, fx) {
+    const e = (events || []).filter(e => e.label);
+    if (!e.length) return "";
+    return (e.length === 1 ? "Event: " : "Events: ") +
+      e.map(e => e.label + " (" + fx(e.t) + ")").join(", ") + ".";
+  }
+
+  // A row of the data table as one sentence, for the live region.
+  function rowWords(head, row) {
+    return row[0] + ": " + row.slice(1).map((c, j) => (head[j + 1] ? head[j + 1] + " " : "") + c).join(", ");
+  }
+
+  // The data table: <details><summary/><table/></details>, appended to host.
+  function dataTable(host, cfg, title, head, rows) {
+    const mk = (tag, text, attrs) => {
+      const e = document.createElement(tag);
+      for (const k in attrs || {}) e.setAttribute(k, attrs[k]);
+      if (text != null) e.textContent = text;
+      return e;
+    };
+    const det = mk("details", null, { class: "sediment-data" });
+    det.appendChild(mk("summary", typeof cfg.table === "string" ? cfg.table : "Data table"));
+    const table = mk("table");
+    table.appendChild(mk("caption", title));
+    const thead = mk("thead"), hr = mk("tr");
+    head.forEach(h => hr.appendChild(mk("th", h, { scope: "col" })));
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    const tbody = mk("tbody");
+    for (const row of rows) {
+      const tr = mk("tr");
+      row.forEach((c, j) => tr.appendChild(j ? mk("td", c) : mk("th", c, { scope: "row" })));
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    det.appendChild(table);
+    host.appendChild(det);
+  }
+
+  const keysOn = (cfg, tipOn) => cfg.keyboard === true || (cfg.keyboard !== false && tipOn);
+
+  // Keyboard inspection over n items. show(i) draws the marker and opens the
+  // tooltip, hide() undoes both, words(i) is what the live region says.
+  function keyNav(svg, host, n, words, show, hide) {
+    svg.setAttribute("tabindex", "0");
+    const live = document.createElement("div");
+    live.setAttribute("class", "sediment-sr");
+    live.setAttribute("aria-live", "polite");
+    live.style.cssText = SR_ONLY;      // CSSOM, so a strict style-src CSP allows it
+    host.appendChild(live);
+    let at = -1;
+    const go = i => {
+      at = Math.max(0, Math.min(n - 1, i));
+      show(at);
+      live.textContent = words(at);
+    };
+    const close = () => { if (at < 0) return; at = -1; hide(); };
+    svg.addEventListener("keydown", ev => {
+      const k = ev.key;
+      if (k === "ArrowRight" || k === "ArrowDown") go(at < 0 ? 0 : at + 1);
+      else if (k === "ArrowLeft" || k === "ArrowUp") go(at < 0 ? n - 1 : at - 1);
+      else if (k === "Home") go(0);
+      else if (k === "End") go(n - 1);
+      else if (k === "Escape" && at >= 0) close();
+      else return;                       // leave every other key to the page
+      ev.preventDefault();
+    });
+    svg.addEventListener("blur", close);
+    return live;
+  }
+
+  const KEY_HINT = " Arrow keys step through the values. Home and End jump to the ends. Escape closes.";
+
+  // The end of every builder: name, description, optional table, keyboard.
+  // a = { kind, words, head, rows, tipOn, show(k), hide(), tipWords(k), keyIdx }
+  // The keyboard steps k over keyIdx (indexes into rows), or over every row.
+  function finish(svg, host, cfg, a) {
+    const title = cfg.title || a.kind;
+    const keyIdx = a.keyIdx || a.rows.map((_, i) => i);
+    const keys = keysOn(cfg, a.tipOn) && keyIdx.length > 0;
+    let desc = typeof cfg.desc === "function" ? cfg.desc(a.words) : cfg.desc != null ? cfg.desc : a.words;
+    if (keys) desc += KEY_HINT;
+    describe(svg, { title, desc });
+    if (cfg.table) dataTable(host, cfg, title, a.head, a.rows);
+    if (keys) keyNav(svg, host, keyIdx.length,
+      k => (a.tipOn && a.tipWords && htmlText(a.tipWords(k))) || rowWords(a.head, a.rows[keyIdx[k]]),
+      a.show, a.hide);
+  }
+
+  // The inspection hairline shared by the x-series charts: pointer (when a
+  // tooltip is set, unchanged from before) and keyboard both drive it.
+  // o = { xs, x, W, H, top, bottom, axis }. Returns { tipOn, show, hide }.
+  function xInspect(svg, host, cfg, o, tipOn) {
+    if (!tipOn && !keysOn(cfg, false)) return { tipOn, show() {}, hide() {} };
+    const { xs, x, W, H, top } = o;
+    const hair = svgEl("line", { y1: top, y2: o.bottom, stroke: o.axis,
+      "stroke-width": 1, "stroke-dasharray": "2 3", visibility: "hidden" });
+    svg.appendChild(hair);
+    const show = (bi, r) => {
+      r = r || svg.getBoundingClientRect();
+      hair.setAttribute("x1", x(xs[bi])); hair.setAttribute("x2", x(xs[bi]));
+      hair.setAttribute("visibility", "visible");
+      if (tipOn) cfg.tip.show(host, x(xs[bi]) * (r.width / W), top * (r.height / H), cfg.tipHTML(bi));
+    };
+    const hide = () => { hair.setAttribute("visibility", "hidden"); if (tipOn) cfg.tip.hide(); };
+    if (tipOn) {
+      svg.addEventListener("pointermove", ev => {
+        const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
+        let bi = 0;
+        for (let i = 1; i < xs.length; i++)
+          if (Math.abs(x(xs[i]) - px) < Math.abs(x(xs[bi]) - px)) bi = i;
+        show(bi, r);
+      });
+      svg.addEventListener("pointerleave", hide);
+    }
+    return { tipOn, show: i => show(i), hide };
+  }
+
+  // A focus ring for the item charts (columns, segments, dots): one rect in a
+  // <g>, moved to the active item. In a <g> so callers that count the svg's
+  // direct-child rects still count only the data.
+  function itemMarker(svg) {
+    const g = svgEl("g", { class: "sfocus", "pointer-events": "none", visibility: "hidden" });
+    const r = svgEl("rect", { fill: "none", stroke: "currentColor", "stroke-width": 1.5, rx: 3 });
+    g.appendChild(r);
+    svg.appendChild(g);
+    return {
+      show(b) {
+        r.setAttribute("x", b.x - 3); r.setAttribute("y", b.y - 3);
+        r.setAttribute("width", b.w + 6); r.setAttribute("height", b.h + 6);
+        g.setAttribute("visibility", "visible");
+      },
+      hide() { g.setAttribute("visibility", "hidden"); },
+    };
+  }
+
   // ── texture generator ──────────────────────────────────────────────────────
   // A value is encoded by tiling a small mint square or circle (Figma
   // pattern-square 1:398 / pattern-circle 1:403). Contrast between keys rides on
@@ -304,7 +532,7 @@
       const tileH = P.hex ? rowH * 2 : rowH;
       const p = svgEl("pattern", { id, width: pitch, height: tileH,
         patternUnits: "userSpaceOnUse", fill: ink });
-      if (o.bg) p.appendChild(svgEl("rect", { width: pitch, height: tileH, fill: o.bg }));
+      if (o.bg) p.appendChild(svgEl("rect", { width: pitch, height: tileH, fill: o.bg, class: "sbg" }));
       p.appendChild(markShape(P.square, pitch / 2, rowH / 2, m));
       if (P.hex) {                                    // offset row (halves wrap across the tile)
         p.appendChild(markShape(P.square, 0, rowH * 1.5, m));
@@ -363,7 +591,8 @@
   // whole marks so the swatch edges are clean too. opts.t sets its density.
   function chip(i, n, ink, size, opts) {
     size = size || 16;
-    const svg = svgEl("svg", { width: size, height: size, class: "sw-chip" });
+    // A swatch sits beside its own words, so screen readers skip it.
+    const svg = svgEl("svg", { width: size, height: size, class: "sw-chip", "aria-hidden": "true" });
     const isSolid = i >= n - 1 || n < 2 || (opts && opts.t === 1);
     if (isSolid) {
       // Solid fills edge to edge, tile or no tile — the same rule the bar
@@ -374,7 +603,7 @@
         fill: (opts && opts.solidFill) || ink }));
     } else {
       if (opts && opts.bg)
-        svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: opts.bg }));
+        svg.appendChild(svgEl("rect", { width: size, height: size, rx: 2, fill: opts.bg, class: "sbg" }));
       drawMarks(svg, { x: 0, y: 0, w: size, h: size }, i, n, ink, opts);
     }
     return svg.outerHTML;
@@ -394,9 +623,10 @@
   // cfg: {
   //   host, H=230, padL=56, padR=92, padT=14 (22 with events), padB=26,
   //   xs:[t...],                          // x values (e.g. epoch ms), ascending
-  //   series:[{ values:[v...], color, dash }], // one line each; values align to xs;
-  //                                       // null = no data (the line breaks);
-  //                                       // dash: stroke-dasharray (default solid)
+  //   series:[{ values:[v...], color, dash, label }], // one line each. values align
+  //                                       // to xs, null = no data (the line breaks).
+  //                                       // dash: stroke-dasharray (default solid).
+  //                                       // label: its name in words (default endLabel)
   //   tokens:{ axis, hair, page, ref },   // resolved colours (ref defaults to hair)
   //   fmtK:v=>str,                        // compact value labels
   //   fmtTick:(v,top)=>str,               // y tick labels (default fmtK); top = the
@@ -429,7 +659,7 @@
       : padL + (t - t0) / ((t1 - t0) || 1) * (W - padL - padR);
     let vals = [];
     for (const s of series) vals = vals.concat(s.values.filter(has));
-    if (!vals.length) return;
+    if (!vals.length) { describe(svg, { title: cfg.title || "Line chart", desc: "No data." }); return; }
     const lo = Math.min(...vals), hi = Math.max(...vals);
     // Reference lines widen the domain so the comparison is always on the chart.
     const refVals = refs.map(r => r.value).filter(has);
@@ -534,23 +764,19 @@
       svg.appendChild(endText(x(t1) + 8, r.ey, r.ref.label,
         r.ref.showValue === false ? "" : cfg.fmtK(r.ref.value)));
     }
-    if (cfg.tip && cfg.tipHTML) {
-      const hair = svgEl("line", { y1: padT, y2: H - padB, stroke: tk.axis,
-        "stroke-width": 1, "stroke-dasharray": "2 3", visibility: "hidden" });
-      svg.appendChild(hair);
-      svg.addEventListener("pointermove", ev => {
-        const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
-        let bi = 0;
-        for (let i = 1; i < xs.length; i++)
-          if (Math.abs(x(xs[i]) - px) < Math.abs(x(xs[bi]) - px)) bi = i;
-        hair.setAttribute("x1", x(xs[bi])); hair.setAttribute("x2", x(xs[bi]));
-        hair.setAttribute("visibility", "visible");
-        cfg.tip.show(host, x(xs[bi]) * (r.width / W), padT * (r.height / H), cfg.tipHTML(bi));
-      });
-      svg.addEventListener("pointerleave", () => {
-        hair.setAttribute("visibility", "hidden"); cfg.tip.hide();
-      });
-    }
+    const ins = xInspect(svg, host, cfg, { xs, x, W, H, top: padT, bottom: H - padB, axis: tk.axis },
+      !!(cfg.tip && cfg.tipHTML));
+    const fv = fmtValueOf(cfg, cfg.fmtK), fx = fmtXOf(cfg);
+    const names = series.map((s, si) => s.label || (cfg.endLabel && cfg.endLabel(si)) || "series " + (si + 1));
+    const words = [
+      "Line chart, " + listOf(series.length, "series", "series") + (series.length > 1 ? ": " + names.join(", ") + "." : "."),
+      xRange(xs, fx),
+      ...series.map((s, si) => seriesWords(names[si], s.values, xs, fv, fx)),
+      refWords(refs, fv), eventWords(events, fx),
+    ].filter(Boolean).join(" ");
+    finish(svg, host, cfg, { kind: "Line chart", words, ...ins, tipWords: cfg.tipHTML,
+      head: [""].concat(names),
+      rows: xs.map((t, i) => [fx(t)].concat(series.map(s => has(s.values[i]) ? fv(s.values[i]) : "no data"))) });
   }
 
   // ── stacked area over an x-series, texture-coded bands ──
@@ -592,7 +818,7 @@
 
     if (!cfg.noBg) {
       svg.appendChild(svgEl("rect", { x: padL, y: padT, width: Math.max(W - padL - padR, 0),
-        height: H - padB - padT, fill: tk.surface, rx: 4 }));
+        height: H - padB - padT, fill: tk.surface, rx: 4, class: "sbg" }));
     }
     if (!cfg.noAxis) {
       yAxis(svg, cfg, tk, y, 0, hi, padL, W - padR, 0, Math.max(...totals));
@@ -714,23 +940,22 @@
       lb.textContent = capName + " " + pct + "% \u00b7 " + valStr;
       svg.appendChild(lb);
     }
-    if (cfg.tip && cfg.tipHTML && !single) {
-      const hair = svgEl("line", { y1: padT, y2: H - padB, stroke: tk.axis,
-        "stroke-width": 1, "stroke-dasharray": "2 3", visibility: "hidden" });
-      svg.appendChild(hair);
-      svg.addEventListener("pointermove", ev => {
-        const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
-        let bi = 0;
-        for (let i = 1; i < xs.length; i++)
-          if (Math.abs(x(xs[i]) - px) < Math.abs(x(xs[bi]) - px)) bi = i;
-        hair.setAttribute("x1", x(xs[bi])); hair.setAttribute("x2", x(xs[bi]));
-        hair.setAttribute("visibility", "visible");
-        cfg.tip.show(host, x(xs[bi]) * (r.width / W), padT * (r.height / H), cfg.tipHTML(bi));
-      });
-      svg.addEventListener("pointerleave", () => {
-        hair.setAttribute("visibility", "hidden"); cfg.tip.hide();
-      });
-    }
+    const ins = xInspect(svg, host, cfg, { xs, x, W, H, top: padT, bottom: H - padB, axis: tk.axis },
+      !!(cfg.tip && cfg.tipHTML && !single));
+    const fv = fmtValueOf(cfg, cfg.fmtNZD || cfg.fmtK), fx = fmtXOf(cfg);
+    const names = bands.map((b, bi) => b.label || "band " + (bi + 1));
+    const totalAt = i => present[i] ? fv(totals[i]) : "no data";
+    const words = [
+      "Stacked area chart, " + listOf(bands.length, "band", "bands") + ": " + names.join(", ") + ".",
+      xRange(xs, fx),
+      present[last] ? "Latest total " + fv(totals[last]) + " (" + fx(xs[last]) + ")." : "",
+      ...bands.map((b, bi) => seriesWords(names[bi], b.values, xs, fv, fx)),
+      refWords(cfg.refs, fv), eventWords(events, fx),
+    ].filter(Boolean).join(" ");
+    finish(svg, host, cfg, { kind: "Stacked area chart", words, ...ins, tipWords: cfg.tipHTML,
+      head: [""].concat(names, "total"),
+      rows: xs.map((t, i) => [fx(t)].concat(
+        bands.map(b => has(b.values[i]) ? fv(b.values[i]) : "no data"), totalAt(i))) });
   }
 
   // ── vertical columns on a shared baseline, diverging +/- ──
@@ -770,6 +995,7 @@
     }
     const slot = (W - padL - padR) / bars.length;
     const bw = Math.max(Math.min(slot - 3, 28), 3);
+    const boxes = [];
     bars.forEach((b, i) => {
       const cx = padL + slot * i + slot / 2;
       const rect = svgEl("rect", {
@@ -780,17 +1006,35 @@
       const lb = svgEl("text", { x: cx, y: H - 8, "text-anchor": "middle" });
       lb.textContent = b.label;
       svg.appendChild(lb);
+      const tipAt = () => {
+        const r = svg.getBoundingClientRect();
+        cfg.tip.show(host, cx * (r.width / W), y(Math.max(b.value, 0)) * (r.height / H), cfg.tipHTML(i));
+      };
+      boxes.push({ x: cx - bw / 2, y: Math.min(y(b.value), y(0)), w: bw,
+        h: Math.abs(y(b.value) - y(0)) || 1, tip: tipAt });
       if (cfg.tip && cfg.tipHTML) {
-        rect.addEventListener("pointermove", () => {
-          const r = svg.getBoundingClientRect();
-          cfg.tip.show(host, cx * (r.width / W), y(Math.max(b.value, 0)) * (r.height / H), cfg.tipHTML(i));
-        });
+        rect.addEventListener("pointermove", tipAt);
         rect.addEventListener("pointerleave", cfg.tip.hide);
       }
     });
     svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y(0), y2: y(0),
       stroke: ink, "stroke-width": 1 }));
     yLabel(0, cfg.zeroLabel || "$0");
+    const tipOn = !!(cfg.tip && cfg.tipHTML);
+    const fv = fmtValueOf(cfg);
+    const vals = bars.map(b => b.value);
+    const words = bars.length ? [
+      "Column chart, " + listOf(bars.length, "column", "columns") + ", " +
+        (bars.length > 1 ? bars[0].label + " to " + bars[bars.length - 1].label : bars[0].label) + ".",
+      "Highest " + fv(Math.max(...vals)) + " (" + bars[vals.indexOf(Math.max(...vals))].label + ").",
+      "Lowest " + fv(Math.min(...vals)) + " (" + bars[vals.indexOf(Math.min(...vals))].label + ").",
+      target > 0 ? "Reference line: " + (cfg.targetLabel ? cfg.targetLabel + " " : "") + fv(target) + "." : "",
+    ].filter(Boolean).join(" ") : "No data.";
+    const mark = keysOn(cfg, tipOn) ? itemMarker(svg) : null;
+    finish(svg, host, cfg, { kind: "Column chart", words, tipOn, tipWords: cfg.tipHTML,
+      head: ["", "value"], rows: bars.map(b => [String(b.label), fv(b.value)]),
+      show: i => { mark.show(boxes[i]); if (tipOn) boxes[i].tip(); },
+      hide: () => { mark.hide(); if (tipOn) cfg.tip.hide(); } });
   }
 
   // ── area + line combo: textured "invested" area under a value/return line ──
@@ -800,6 +1044,7 @@
   //   host, H=230, padL=56, padR=20, padT=14 (22 with events), padB=26,
   //   xs:[t...], bars:[v...], line:[v...],   // null in line = no data (it breaks)
   //   ti,                         // texture-band index for the bars
+  //   areaLabel="area", lineLabel="line", // their names in words (description, table)
   //   ink, tokens:{axis,hair,page,ref},
   //   fmtK:v=>str, fmtTick:(v,top)=>str, xLabel:(t,first)=>str,
   //   rangeFrame:false,                     // range-frame y axis instead of the grid
@@ -897,21 +1142,19 @@
     const end = pts.filter(Boolean).pop();
     if (end) svg.appendChild(svgEl("circle", { cx: end[0], cy: end[1],
       r: 3.5, fill: ink, stroke: tk.page, "stroke-width": 1.5 }));
-    if (cfg.tip && cfg.tipHTML) {
-      const hair = svgEl("line", { y1: padT, y2: H - padB, stroke: tk.axis,
-        "stroke-width": 1, "stroke-dasharray": "2 3", visibility: "hidden" });
-      svg.appendChild(hair);
-      svg.addEventListener("pointermove", ev => {
-        const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
-        let bi = 0;
-        for (let i = 1; i < xs.length; i++)
-          if (Math.abs(x(xs[i]) - px) < Math.abs(x(xs[bi]) - px)) bi = i;
-        hair.setAttribute("x1", x(xs[bi])); hair.setAttribute("x2", x(xs[bi]));
-        hair.setAttribute("visibility", "visible");
-        cfg.tip.show(host, x(xs[bi]) * (r.width / W), padT * (r.height / H), cfg.tipHTML(bi));
-      });
-      svg.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); cfg.tip.hide(); });
-    }
+    const ins = xInspect(svg, host, cfg, { xs, x, W, H, top: padT, bottom: H - padB, axis: tk.axis },
+      !!(cfg.tip && cfg.tipHTML));
+    const fv = fmtValueOf(cfg, cfg.fmtK), fx = fmtXOf(cfg);
+    const aName = cfg.areaLabel || "area", lName = cfg.lineLabel || "line";
+    const words = [
+      "Area and line chart: " + aName + " and " + lName + ".",
+      xRange(xs, fx),
+      seriesWords(aName, barTotals, xs, fv, fx), seriesWords(lName, line, xs, fv, fx),
+      refWords(cfg.refs, fv), eventWords(events, fx),
+    ].filter(Boolean).join(" ");
+    const cell = v => has(v) ? fv(v) : "no data";
+    finish(svg, host, cfg, { kind: "Area and line chart", words, ...ins, tipWords: cfg.tipHTML,
+      head: ["", aName, lName], rows: xs.map((t, i) => [fx(t), cell(barTotals[i]), cell(line[i])]) });
   }
 
   // ── dot plot: one row per item on a shared ordinal axis ──
@@ -967,6 +1210,7 @@
       svg.appendChild(svgEl("line", { x1: x(cfg.avgPos), x2: x(cfg.avgPos), y1: padT - 4, y2: axisY,
         stroke: tk.fg || "var(--ink)", "stroke-width": 1.5, "stroke-opacity": 0.6 }));
 
+    const boxes = [];
     rows.forEach((it, i) => {
       const cy = padT + i * rowH + rowH / 2;
       svg.appendChild(svgEl("line", { x1: ax0, x2: ax1, y1: cy, y2: cy, stroke: tk.hair || "var(--hair)", "stroke-dasharray": "1 4", "stroke-opacity": 0.5 }));
@@ -1009,12 +1253,14 @@
       const c = svgEl("circle", { cx: x(it.pos), cy, r, fill: cfg.dotColor, "fill-opacity": 0.85 });
       svg.appendChild(c);
 
+      const cx = x(it.pos);
+      const tipAt = () => {
+        const rr = svg.getBoundingClientRect();
+        cfg.tip.show(host, cx * (rr.width / W), cy * (rr.height / H), it.tipHTML);
+      };
+      boxes.push({ x: cx - r, y: cy - r, w: 2 * r, h: 2 * r, tip: tipAt });
       if (cfg.tip && it.tipHTML) {
-        const cx = x(it.pos);
-        c.addEventListener("pointermove", () => {
-          const rr = svg.getBoundingClientRect();
-          cfg.tip.show(host, cx * (rr.width / W), cy * (rr.height / H), it.tipHTML);
-        });
+        c.addEventListener("pointermove", tipAt);
         c.addEventListener("pointerleave", cfg.tip.hide);
       }
     });
@@ -1032,6 +1278,28 @@
       t.textContent = l;
       svg.appendChild(t);
     });
+    // A row's place on the scale in words: its level, or the two it sits between.
+    const levelAt = p => {
+      const lo = Math.floor(p), hi = Math.ceil(p);
+      return lo === hi || levels[hi] == null ? String(levels[lo] != null ? levels[lo] : p)
+        : "between " + levels[lo] + " and " + levels[hi];
+    };
+    const valueOf = it => it.valueLabel != null ? String(it.valueLabel) : fmtValueOf(cfg)(it.value);
+    const words = [
+      "Dot plot, " + listOf(rows.length, "row", "rows") +
+        (levels.length > 1 ? " on a scale from " + levels[0] + " to " + levels[levels.length - 1] : "") + ".",
+      ...rows.map(it => (it.label || "") + ": " + levelAt(it.pos) + ", " + valueOf(it) + "."),
+      cfg.avgPos != null ? "Marker line: " + levelAt(Math.round(cfg.avgPos * 10) / 10) + "." : "",
+    ].filter(Boolean).join(" ");
+    // Keyboard steps through the rows that carry a tooltip (or all, with keyboard:true).
+    const tipOn = !!cfg.tip && rows.some(it => it.tipHTML);
+    const idx = rows.map((_, i) => i).filter(i => !tipOn || rows[i].tipHTML);
+    const mark = keysOn(cfg, tipOn) ? itemMarker(svg) : null;
+    finish(svg, host, cfg, { kind: "Dot plot", words, tipOn, tipWords: k => rows[idx[k]].tipHTML,
+      head: ["", "level", "value"], keyIdx: idx,
+      rows: rows.map(it => [it.label || "", levelAt(it.pos), valueOf(it)]),
+      show: k => { mark.show(boxes[idx[k]]); if (tipOn) boxes[idx[k]].tip(); },
+      hide: () => { mark.hide(); if (tipOn) cfg.tip.hide(); } });
   }
 
   // ── segmented bar: texture-coded proportional segments, optional stepped
@@ -1083,6 +1351,7 @@
     const advance = 7.4;
     // Density by VALUE: small segments pack close, large ones spread far apart.
     const rankT = valueRanks(segs.map(s => s.value));
+    const boxes = [];
     let x = 0;
     segs.forEach((s, i) => {
       const sx = x, w = ws[i];
@@ -1109,15 +1378,18 @@
       // segment is its own shape, so an outline there just draws a border round
       // a filled block, the same artefact as the inset.
       if (tk.border && !solid) { rect.setAttribute("stroke", tk.border); rect.setAttribute("stroke-width", 1); }
+      if (!solid) rect.setAttribute("class", "sbg");   // the card behind the marks
       svg.appendChild(rect);
       if (!solid) {
         drawMarks(svg, { x: sx, y: barY, w, h: barH }, ti, n, ink, { t });
       }
+      const tipAt = () => {
+        const r = svg.getBoundingClientRect();
+        cfg.tip.show(host, (sx + w / 2) * (r.width / W), barY, s.tipHTML);
+      };
+      boxes.push({ x: sx, y: barY, w, h: barH, tip: tipAt });
       if (cfg.tip && s.tipHTML) {
-        rect.addEventListener("pointermove", () => {
-          const r = svg.getBoundingClientRect();
-          cfg.tip.show(host, (sx + w / 2) * (r.width / W), barY, s.tipHTML);
-        });
+        rect.addEventListener("pointermove", tipAt);
         rect.addEventListener("pointerleave", cfg.tip.hide);
       }
       if (connectors) {
@@ -1143,6 +1415,20 @@
       }
       x += w + gap;
     });
+    const fv = fmtValueOf(cfg);
+    const share = v => Math.round(v / (total || 1) * 100) + "%";
+    const words = [
+      "Segmented bar, " + listOf(count, "part", "parts") + " of " + fv(total) + ".",
+      ...segs.map(s => (s.label || "") + ": " + fv(s.value) + ", " + share(s.value) + "."),
+    ].join(" ");
+    const tipOn = !!cfg.tip && segs.some(s => s.tipHTML);
+    const idx = segs.map((_, i) => i).filter(i => !tipOn || segs[i].tipHTML);
+    const mark = keysOn(cfg, tipOn) ? itemMarker(svg) : null;
+    finish(svg, host, cfg, { kind: "Segmented bar", words, tipOn, tipWords: k => segs[idx[k]].tipHTML,
+      head: ["", "value", "share"], keyIdx: idx,
+      rows: segs.map(s => [s.label || "", fv(s.value), share(s.value)]),
+      show: k => { mark.show(boxes[idx[k]]); if (tipOn) boxes[idx[k]].tip(); },
+      hide: () => { mark.hide(); if (tipOn) cfg.tip.hide(); } });
   }
 
   // ── small multiples: one panel per series, stacked on one shared time axis ──
@@ -1215,26 +1501,25 @@
       lb.textContent = cfg.xLabel(t, i === 0);
       svg.appendChild(lb);
     });
-    if (cfg.tip && cfg.tipHTML) {
-      const hair = svgEl("line", { y1: padT, y2: yAxis, stroke: tk.axis,
-        "stroke-width": 1, "stroke-dasharray": "2 3", visibility: "hidden" });
-      svg.appendChild(hair);
-      svg.addEventListener("pointermove", ev => {
-        const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
-        let bi = 0;
-        for (let i = 1; i < xs.length; i++)
-          if (Math.abs(x(xs[i]) - px) < Math.abs(x(xs[bi]) - px)) bi = i;
-        hair.setAttribute("x1", x(xs[bi])); hair.setAttribute("x2", x(xs[bi]));
-        hair.setAttribute("visibility", "visible");
-        cfg.tip.show(host, x(xs[bi]) * (r.width / W), padT * (r.height / H), cfg.tipHTML(bi));
-      });
-      svg.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); cfg.tip.hide(); });
-    }
+    const ins = xInspect(svg, host, cfg, { xs, x, W, H, top: padT, bottom: yAxis, axis: tk.axis },
+      !!(cfg.tip && cfg.tipHTML));
+    const fv = fmtValueOf(cfg, cfg.fmtK), fx = fmtXOf(cfg);
+    const names = panels.map((p, pi) => p.label || "panel " + (pi + 1));
+    const words = [
+      "Small multiples, " + listOf(panels.length, "panel", "panels") + ": " + names.join(", ") + ", " +
+        (cfg.shared ? "on one shared scale." : "each on its own scale."),
+      xRange(xs, fx),
+      ...panels.map((p, pi) => seriesWords(names[pi], p.values, xs, fv, fx) +
+        (refWords(p.refs, fv) ? " " + refWords(p.refs, fv) : "")),
+    ].filter(Boolean).join(" ");
+    finish(svg, host, cfg, { kind: "Small multiples", words, ...ins, tipWords: cfg.tipHTML,
+      head: [""].concat(names),
+      rows: xs.map((t, i) => [fx(t)].concat(panels.map(p => has(p.values[i]) ? fv(p.values[i]) : "no data"))) });
   }
 
   global.Sediment = {
     svgEl, frame, yScale, niceTicks, axisTicks, rangeFrame, grid, monthTicks, placedMonthTicks,
-    tip, texture, chip, valueRanks, lineChart, barLineChart, stackedArea, columnChart, dotPlot, segmentedBar,
+    tip, describe, texture, chip, valueRanks, lineChart, barLineChart, stackedArea, columnChart, dotPlot, segmentedBar,
     smallMultiples,
   };
 })(typeof window !== "undefined" ? window : this);

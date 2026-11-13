@@ -1,125 +1,83 @@
 # Sediment
 
-Small, dependency-free SVG charts. One file, no framework, no build step, no
-runtime dependencies. It adds a single global, `Sediment`.
+Sediment draws small SVG charts in the browser. It is one JavaScript file with
+no dependencies and no build step, and it tells series apart by texture
+instead of colour. Each chart describes its data to screen readers, and its
+tooltip works from the keyboard.
 
-The style is Tufte-ish: range-frame axes, a dotted hairline grid, labels sitting
-right on the data. Series tell themselves apart by texture (dot and line
-patterns), not colour, so a chart stays readable with no colour at all.
+![A stacked area chart and a segmented bar, drawn in one ink colour. Battery, solar and grid each wear their own texture, and the same texture marks the same source in both charts.](images/hero.svg)
 
-## Suggested palette
+*Synthetic data. Both charts use one ink colour on one background. Battery,
+solar and grid wear the same texture in both, and each is named on the chart.*
 
-Sediment ships no colours of its own. You pass every colour in, so it fits any
-theme. If you want a starting point, this is the warm, high-contrast set the
-charts below were drawn with.
+The style follows Tufte: a dotted hairline grid or a range-frame axis, and
+labels placed on the data rather than in a legend. Sediment ships no colours.
+You pass every colour in, so it fits any theme.
 
-![Suggested palette](images/palette.png)
+## A minimal example
 
-| Colour | Hex | Role |
-| --- | --- | --- |
-| Cream | `#edf3d7` | ink, marks, lines |
-| Chocolate | `#3e332f` | background |
-| Pistachio | `#81bb8b` | gain |
-| Peach | `#e88b7d` | loss |
+```html
+<link rel="stylesheet" href="sediment.css">
+<script src="sediment.js"></script>
 
-Hairlines are Cream at 50% opacity, a tint rather than a separate colour.
+<div id="chart" style="color: #222"></div>
 
-## The charts
+<script>
+  const host = document.getElementById("chart");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"];
+  const xs = months.map((_, i) => Date.UTC(2026, i, 1));
 
-### dotPlot
-Items on a shared ordinal axis. Position carries the meaning, dot area carries
-the amount, and a solid line marks the average.
-
-![dotPlot](images/dotPlot.png)
-
-```js
-Sediment.dotPlot({
-  host, levels: ["cash", "conservative", "balanced", "growth", "aggressive"],
-  rows: funds.map(f => ({ pos: f.band, value: f.value, label: f.name, valueLabel: nzd(f.value) })),
-  avgPos: weightedAverage, dotColor: cream, tokens: { hair: border, fg: cream },
-});
+  Sediment.lineChart({
+    host, padL: 64,
+    title: "Grid and solar power, 2026",
+    xs,
+    series: [
+      { values: [410, 380, 352, null, 300, 282, 270, 255], color: "#222" },
+      { values: [200, 215, 230, 236, 250, 262, 280, 291], color: "#222", dash: "5 3" },
+    ],
+    tokens: { axis: "#222", hair: "rgba(0,0,0,0.3)", page: "#fff" },
+    fmtK: v => v + " kWh",
+    xLabel: t => months[new Date(t).getUTCMonth()],
+    endLabel: i => ["grid", "solar"][i],
+    refs: [{ value: 320, label: "budget" }],
+    events: [{ t: xs[2], label: "panels on" }],
+  });
+</script>
 ```
 
-### lineChart
-Lines over a time series, each named at its end. A null value is a gap: the
-line breaks rather than dropping to zero. Optional range-frame axis
-(`rangeFrame`), latest values (`endValue`), reference lines (`refs`) and events
-(`events`).
+![The line chart this code draws: a falling solid line named grid with a gap in April, a rising dashed line named solar, a dashed budget line at 320 kWh, and an event marked "panels on" in March.](images/example.svg)
 
-![lineChart](images/lineChart.png)
+The April value is `null`, so the grid line breaks there instead of dropping
+to zero. The solar line is dashed, so the two lines differ in shape as well as
+position. Each line is named at its right end. `title` names the chart for
+screen readers, and Sediment writes the rest of the description from the data
+(see Accessibility).
 
-```js
-Sediment.lineChart({
-  host, xs, series: [{ values: netWorth, color: cream }],
-  tokens: { axis: cream, hair, page: bg }, fmtK, xLabel, endLabel: () => "net worth",
-});
+## Install
+
+There is no npm package. Copy the two files into your project and load them:
+
+```html
+<link rel="stylesheet" href="sediment.css">
+<script src="sediment.js"></script>
 ```
 
-### stackedArea
-Stacked bands over time, each band a texture, totals labelled on the right.
+`sediment.js` adds one global, `window.Sediment`. `sediment.css` holds the
+companion styles. Only its `svg text` rule is required. Without it, labels
+render black at the wrong size. Text colour is inherited, so set `color` on
+the chart host and every label follows. The other rules draw the keyboard
+focus ring, style the optional data table, and handle forced colours and
+reduced motion. Keep them unless you replace them with your own.
 
-![stackedArea](images/stackedArea.png)
+To track the repo and pull updates, add it as a git submodule:
 
-```js
-Sediment.stackedArea({
-  host, xs, n: 4, ink: cream, bg,
-  bands: [{ values: cash, ti: 0, label: "Cash" }, { values: shares, ti: 1, label: "Shares" }, ...],
-  tokens: { surface, axis: cream, hair }, fmtK, xLabel,
-});
+```bash
+git submodule add https://github.com/jtrotsky/sediment.git vendor/sediment
+# later, to update:
+git submodule update --remote vendor/sediment
 ```
 
-### columnChart
-Columns on a shared baseline, positive and negative, with an optional target line.
-
-![columnChart](images/columnChart.png)
-
-```js
-Sediment.columnChart({
-  host, bars: months.map(m => ({ value: m.net, label: m.name })),
-  posColor: gain, negColor: loss, ink: cream, tokens: { border },
-  target: 3000, targetLabel: "goal",
-});
-```
-
-### segmentedBar
-Proportional segments, texture-coded, with optional stepped connector labels.
-
-![segmentedBar](images/segmentedBar.png)
-
-```js
-Sediment.segmentedBar({
-  host, n: 5, total, ink: cream, connectors: true,
-  segments: holdings.map((h, i) => ({ label: h.name, value: h.value, ti: i })),
-  tokens: { border, hair },
-});
-```
-
-### barLineChart
-A textured area for one measure with a line over it for another, so the gap
-between them reads at a glance.
-
-![barLineChart](images/barLineChart.png)
-
-```js
-Sediment.barLineChart({
-  host, xs, bars: invested, line: value, ti: 1, ink: cream,
-  tokens: { axis: cream, hair, page: bg }, fmtK, xLabel,
-});
-```
-
-### smallMultiples
-One panel per series, stacked on one shared time axis. Use it when series
-differ in scale, or when the question is each one's shape. Each panel prints its
-own min and max; `shared: true` puts every panel on one scale when the question
-is level.
-
-```js
-Sediment.smallMultiples({
-  host, xs, note: "each on its own scale",
-  panels: funds.map(f => ({ label: f.name, values: f.prices, color: cream })),
-  tokens: { axis: cream, hair, page: bg }, fmtK, xLabel,
-});
-```
+Open `demo.html` in a browser to see all seven builders draw from live code.
 
 ## Which chart
 
@@ -137,45 +95,224 @@ Pick by the question, not the shape of the data.
 
 Under about twenty numbers, a table usually beats any of them.
 
-## Install
+## Accessibility
 
-Copy the two files into your project and load them:
+A Sediment chart is built to read without colour, without a mouse and without
+sight. The tests in `test/` check the generated markup and the key handling.
+The CSS rules (focus ring, forced colours, reduced motion) have not been seen
+in a browser. The last part of this section lists what else is unverified.
+
+### Without colour
+
+- **Texture, not hue.** `stackedArea`, `segmentedBar` and `barLineChart` fill
+  each band with a pattern of marks. A band's texture index `ti` picks the
+  shape: squares on a rectangular grid for even indexes, circles on a
+  hexagonal grid for odd ones. In `stackedArea` and `segmentedBar` the band's
+  value sets the spacing. The smallest packs its marks with gaps of 15% of a
+  mark, and larger values get wider gaps. The largest band, and
+  the last of `n`, is solid. `Sediment.chip()` draws the same pattern as a
+  small swatch for a table row.
+- **Dashes for lines.** A line series can set `dash`, a stroke-dasharray, so
+  two lines differ in shape.
+- **Direct labels.** Lines and stacked bands are named at their right ends.
+  There is no legend to match against a colour.
+- **Honest gaps.** A `null` value in a line leaves a gap. It is never drawn
+  as zero.
+- **Forced colours.** In Windows high contrast and other forced-colour modes,
+  `sediment.css` draws every line, mark and label in the system text colour
+  (`CanvasText`) and every background in the system background colour
+  (`Canvas`). Series stay apart because they differ by texture and dash.
+
+### Without sight
+
+Every builder marks its `<svg>` as an image with a name and a description.
+This is the README example above, as rendered:
 
 ```html
-<link rel="stylesheet" href="sediment.css">
-<script src="sediment.js"></script>
+<svg viewBox="0 0 672 230" width="100%" height="230" class="sediment"
+     role="img" aria-label="Grid and solar power, 2026"
+     aria-describedby="sediment-1-desc">
+  <desc id="sediment-1-desc">Line chart, 2 series: grid, solar. Jan to Aug.
+    grid: latest 255 kWh (Aug), low 255 kWh (Aug), high 410 kWh (Jan), no data
+    for Apr. solar: latest 291 kWh (Aug), low 200 kWh (Jan), high 291 kWh (Aug).
+    Reference line: budget 320 kWh. Event: panels on (Mar).</desc>
+  ...
 ```
 
-`sediment.js` adds `window.Sediment`. `sediment.css` carries the companion
-styles. Only the `svg text` rule is strictly required; without it labels render
-black at the wrong size. Text colour is inherited, so set `color` on the chart
-host and every label follows.
+(Line breaks added. The `<desc>` text is one line.)
 
-To track this repo and pull updates, add it as a git submodule and point your
-build at `sediment.js`:
+- **The name** is `title`. Without one it is the chart kind, such as
+  "Line chart".
+- **The description** gives the chart kind, the series names, the x range,
+  and each series' latest, low and high value with when. It adds reference
+  lines, events and missing data. Bar, segment and dot charts list their
+  items instead. Pass `desc` as a string to replace it, or as a function to
+  edit it: `desc: auto => "Grid use fell after the panels went on. " + auto`.
+- **Formats.** Values use `fmtValue`, else the builder's own `fmtK` or
+  `fmtNZD`. x values use `fmtX`, else `xLabel(t, true)`.
+- **No `<title>` element.** Browsers show an SVG's `<title>` as a native hover
+  tooltip over the whole chart. It would sit on top of Sediment's own tooltip,
+  so the name goes in `aria-label` instead.
+- **The numbers as a table.** `table: true` adds a collapsed
+  `<details>` after the chart, holding a `<table>` with a caption, one row per
+  x value or item, and "no data" for gaps. Pass a string to name its summary
+  (default "Data table"). It is off by default because it adds an element
+  under the chart and so changes your layout.
+- **Texture chips** from `Sediment.chip()` carry `aria-hidden="true"`. They sit
+  beside their own words and have nothing to add.
+- **`Sediment.describe(svg, { title, desc })`** does the same for an SVG you
+  draw yourself with `Sediment.frame()`.
 
-```bash
-git submodule add https://github.com/jtrotsky/sediment.git vendor/sediment
-# later, to update:
-git submodule update --remote vendor/sediment
-```
+### Without a mouse
 
-`demo.html` renders all of the above from live code if you want to open it and
-poke at it.
+A chart with a tooltip (`tip` plus `tipHTML`) also opens it from the keyboard.
+Pointer behaviour is unchanged.
+
+| Key | Action |
+| --- | --- |
+| Tab | Focus the chart (`tabindex="0"`) |
+| Right or Down arrow | Next point, column, segment or dot |
+| Left or Up arrow | Previous one |
+| Home, End | First, last |
+| Escape | Close the tooltip |
+
+Time-series charts move the same hairline the pointer moves. Column, segment
+and dot charts draw a ring round the active item. A visually hidden
+`aria-live="polite"` region reads out the tooltip's text, or the table row
+when the tooltip has none. Moving focus away closes the tooltip. The focus
+ring is a 2 px outline in the chart's text colour, shown for keyboard focus
+only (`:focus-visible`). The description ends with a one-line key guide.
+
+`keyboard: false` turns this off. `keyboard: true` turns it on for a chart
+with no tooltip: the keys then move the hairline or ring, and the live
+region reads each row.
+
+### Motion
+
+Sediment animates nothing. Under `prefers-reduced-motion: reduce`,
+`sediment.css` also turns off any transition or animation a page adds to the
+chart or its tooltip.
+
+### What is not done or not verified
+
+- **No assistive technology testing.** Nobody has tried these charts with a
+  screen reader (NVDA, JAWS, VoiceOver, TalkBack) or with Windows high
+  contrast. The tests check the markup and the key handling in node, against
+  a stand-in for the browser DOM, not in a browser.
+- **Browse mode may take the arrow keys.** NVDA and JAWS read a page in browse
+  mode, where the arrow keys move the reading cursor and never reach the
+  chart. A user may need to switch to focus mode. The description and the
+  table do not depend on the keys.
+- **One stop per x value.** On a chart with several series, each key press
+  covers every series at that x, as the tooltip does. There is no way to step
+  along one series.
+- **English words.** The generated description uses fixed English words
+  ("latest", "low", "no data"). Replace it with `desc` for other languages.
+- **No contrast checks.** You choose the colours, so you own the contrast. The
+  suggested palette below measures 10.7:1 for Cream on Chocolate (WCAG 2
+  formula).
+
+## Suggested palette
+
+Sediment ships no colours of its own. If you want a starting point, this is the
+warm, high-contrast set the charts in this README were drawn with.
+
+![Swatches of the suggested palette: Cream, Chocolate, Pistachio and Peach, each with its hex value and contrast on Chocolate.](images/palette.svg)
+
+| Colour | Hex | Role | Contrast on Chocolate |
+| --- | --- | --- | --- |
+| Cream | `#edf3d7` | ink, marks, lines | 10.7:1 |
+| Chocolate | `#3e332f` | background | |
+| Pistachio | `#81bb8b` | gain | 5.48:1 |
+| Peach | `#e88b7d` | loss | 4.90:1 |
+
+Hairlines are Cream at 50% opacity, a tint rather than a separate colour.
+
+## The charts
+
+### dotPlot
+Items on a shared ordinal axis. Position carries the meaning, dot area carries
+the amount, and a solid line marks the average.
+
+![dotPlot](images/dotPlot.svg)
+
+### lineChart
+Lines over a time series, each named at its end. Opt in to a range-frame axis
+(`rangeFrame`), latest values (`endValue`), reference lines (`refs`) and events
+(`events`).
+
+![lineChart](images/lineChart.svg)
+
+### stackedArea
+Stacked bands over time, each band a texture, with each band's share and latest
+value labelled on the right.
+
+![stackedArea](images/stackedArea.svg)
+
+### columnChart
+Columns on a shared baseline, positive and negative, with an optional target line.
+
+![columnChart](images/columnChart.svg)
+
+### segmentedBar
+Proportional segments, texture-coded, with optional stepped connector labels.
+
+![segmentedBar](images/segmentedBar.svg)
+
+### barLineChart
+A textured area for one measure with a line over it for another, so the gap
+between them reads at a glance.
+
+![barLineChart](images/barLineChart.svg)
+
+### smallMultiples
+One panel per series, stacked on one shared time axis. Use it when series
+differ in scale, or when the question is each one's shape. Each panel prints its
+own min and max. `shared: true` puts every panel on one scale when the question
+is level.
+
+![smallMultiples](images/smallMultiples.svg)
 
 ## How it works
 
 Every builder takes resolved values. Colours are CSS colour strings, data is
 plain numbers, and text comes from formatter callbacks. The module never reads
-your theme, your DOM beyond the host you give it, or any global state. You write
+your theme, any DOM beyond the host you give it, or any global state. You write
 a thin adapter that resolves your theme (for example with `getComputedStyle`)
-and feeds these builders. That is what keeps it liftable into any project.
+and feeds these builders. That keeps it portable between projects.
+
+Each builder measures the host's width (at least 320 px), clears the host and
+appends a fresh `<svg>`. To redraw, call it again.
+
+## Limits
+
+- **Browser only.** The builders need a DOM. There is no server-side renderer.
+- **Time on the x axis is monthly.** The time-series builders take `xs` as
+  epoch milliseconds and place ticks on month boundaries. Other units are not
+  supported.
+- **Money defaults.** `stackedArea` labels values as dollars and title-cases
+  band names unless you pass `fmtNZD`. `columnChart` labels its baseline `$0`
+  unless you pass `zeroLabel`.
+- **Tests, but no CI and no releases.** `node --test test/*.test.js` runs the
+  tests with no packages to install (Node 18 or later). They run in node
+  against a DOM stand-in, not in a browser. There is no CI and there are no
+  version tags.
 
 ## Builder reference
 
 Each builder takes one `cfg` object. `host` is the element the SVG mounts into,
 sized to the host's width. `tip` is an optional tooltip handle from
 `Sediment.tip(el)`.
+
+Every builder also takes these keys (see Accessibility):
+
+```
+title,                     // accessible name (default: the chart kind)
+desc,                      // string replaces the description, auto => string edits it
+fmtValue(v), fmtX(t),      // how values and x values read in words
+table=false,               // true or a summary string: a data table after the chart
+keyboard,                  // default on with a tooltip; true or false to force
+```
 
 **dotPlot**
 ```
@@ -190,7 +327,7 @@ dotColor, tokens:{ hair, fg }, tip
 **lineChart**
 ```
 host, H=230, padL=56, padR=92, padT=14, padB=26,
-xs:[t], series:[{ values:[v], color, dash }],        // null value = gap
+xs:[t], series:[{ values:[v], color, dash, label }], // null value = gap; label names it in words
 tokens:{ axis, hair, page, ref },
 fmtK, fmtTick(v, top), rangeFrame=false, xLabel, endLabel, endValue,
 refs:[{ value, label, showValue }], events:[{ t, label }],
@@ -198,19 +335,22 @@ annotateExtremes, extremeLabel(v, t, kind), tip, tipHTML
 ```
 
 The y axis is the dotted grid unless `rangeFrame` is set, which draws a range
-frame instead. `fmtTick` formats the y ticks and is told which is the top one,
-so with a range frame the unit can go there once; on the grid every tick is the
-top one. Lines are solid unless a series sets `dash` (a stroke-dasharray).
-Extremes are labelled with `fmtK` unless `extremeLabel` is given. Events add 8px
-to the top padding for their labels.
+frame instead. `fmtTick` formats the y ticks and is told which is the top one.
+With a range frame the unit can go there once. On the grid every tick counts as
+the top one. Lines are solid unless a series sets `dash`. Extremes are labelled
+with `fmtK` unless `extremeLabel` is given. Events add 8 px to the top padding
+for their labels.
 
 **stackedArea**
 ```
 host, H=230, padL=56, padR=110, padT=14, padB=26,
 xs:[t], bands:[{ values:[v], ti, label }], n,        // ti = texture index
 ink, bg, tokens:{ surface, axis, hair, ref },
-fmtK, fmtTick, rangeFrame=false, xLabel, refs, events, tip, tipHTML
+fmtK, fmtTick, fmtNZD, rangeFrame=false, xLabel, refs, events, tip, tipHTML
 ```
+
+`fmtNZD` formats the value in each band's end label. Without it the label reads
+`$` and the rounded value.
 
 **columnChart**
 ```
@@ -232,6 +372,7 @@ connectors=false, step=30, topPad=14, labelGap=8, tip
 ```
 host, H=230, padL=56, padR=20, padT=14, padB=26,
 xs:[t], bars:[v], line:[v], ti, ink,
+areaLabel="area", lineLabel="line",                  // their names in words
 tokens:{ axis, hair, page, ref }, fmtK, fmtTick, rangeFrame=false, xLabel, refs,
 events, tip, tipHTML
 ```
@@ -251,6 +392,11 @@ tokens:{ axis, hair, page, ref }, fmtK, xLabel, tip, tipHTML
 - `Sediment.texture(svg, i, n, ink)` is the pattern fill for band `i` of `n`
   (the last band is solid). `Sediment.chip(i, n, ink, size)` returns an
   inline-SVG swatch of that texture for legends and tables.
+- `Sediment.describe(svg, { title, desc })` gives an SVG `role="img"`, an
+  `aria-label` and a `<desc>`. Every builder calls it. Call it yourself on an
+  SVG you build with `frame()`.
+- `Sediment.valueRanks(values)` ranks each value from 0 (smallest) to 1
+  (largest), so texture density can follow magnitude.
 - `Sediment.svgEl`, `frame`, `yScale`, `niceTicks`, `axisTicks`, `rangeFrame`,
   `grid`, `monthTicks`, `placedMonthTicks` are the low-level building blocks.
 
