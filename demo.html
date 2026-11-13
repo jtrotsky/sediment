@@ -50,38 +50,44 @@
   const funds = [["Cocoa Cash",0,24e6],["Marzipan Bonds",1,60e6],["Nougat Balanced",2,300e6],
     ["Pistachio Growth",3,140e6],["Ghost Pepper",4,40e6]];
   const fundTotal = funds.reduce((a, r) => a + r[2], 0);
-  Sediment.dotPlot({ host: el("dotPlot"), axisPad: 40, levels: L, dotColor: cream,
+  Sediment.dotPlot({ host: el("dotPlot"), title: "Risk profile", axisPad: 40, levels: L, dotColor: cream,
     tokens: { hair: border, fg: cream }, staggerLabels: true, tip: TIP,
     avgPos: funds.reduce((a, r) => a + r[2] * r[1], 0) / fundTotal,
     rows: funds.map(r => ({ pos: r[1], value: r[2], label: r[0], valueLabel: M(r[2]),
       tipHTML: '<div class="t">' + r[0] + '</div>' })) });
 
   // Net worth: a single line over time.
-  Sediment.lineChart({ host: el("lineChart"), xs,
+  Sediment.lineChart({ host: el("lineChart"), title: "Net worth", xs,
     series: [{ values: [120,150,190,240,300,380].map(v => v*1e6), color: cream }],
     tokens: { axis: cream, hair, page: choc }, fmtK: M, xLabel,
     endLabel: () => "net worth", annotateExtremes: true });
 
   // Two lines, told apart by dash: each named at its end with its latest value,
   // a target drawn as a reference, an event marked, and a missing month left blank.
-  Sediment.lineChart({ host: el("twoLines"), xs,
-    series: [{ values: [180,200,240,null,360,420].map(v => v && v*1e6), color: cream },
-             { values: [20,22,24,25,26,26].map(v => v*1e6), color: cream }],
+  // table: true puts the numbers in a data table under the chart. The tooltip
+  // opens from the keyboard too: tab to the chart, then use the arrow keys.
+  const shares = [180,200,240,null,360,420].map(v => v && v*1e6),
+        cash = [20,22,24,25,26,26].map(v => v*1e6);
+  Sediment.lineChart({ host: el("twoLines"), title: "Cash and shares", table: true, xs,
+    series: [{ values: shares, color: cream }, { values: cash, color: cream, dash: "5 3" }],
     tokens: { axis: cream, hair, page: choc, ref: border }, fmtK: M,
     fmtTick: (v, top) => top ? M(v) : M(v).replace("$", ""), xLabel, padR: 130,
     endLabel: si => ["shares", "cash"][si], endValue: si => M([420e6, 26e6][si]),
     refs: [{ value: 300e6, label: "target" }],
-    events: [{ t: xs[2], label: "rebalance" }] });
+    events: [{ t: xs[2], label: "rebalance" }], tip: TIP,
+    tipHTML: i => '<div class="t">' + MO[i] + '</div>' +
+      [["shares", shares[i]], ["cash", cash[i]]].map(([n, v]) => '<div class="row"><span>' + n +
+        '</span><span>' + (v == null ? "no data" : M(v)) + '</span></div>').join("") });
 
   // Holdings over time: one panel each, on its own scale.
-  Sediment.smallMultiples({ host: el("smallMultiples"), xs, note: "each on its own scale",
+  Sediment.smallMultiples({ host: el("smallMultiples"), title: "Holdings over time", xs, note: "each on its own scale",
     tokens: { axis: cream, hair, page: choc }, fmtK: M, xLabel,
     panels: [{ label: "Praline Partners", values: [480,500,470,510,515,520].map(v => v*1e6), color: cream },
              { label: "Macaron Mills", values: [120,140,170,150,175,180].map(v => v*1e6), color: cream },
              { label: "Fudge Factory", values: [70,66,61,null,58,60].map(v => v && v*1e6), color: cream }] });
 
   // Total assets: stacked, texture-coded bands.
-  Sediment.stackedArea({ host: el("stackedArea"), xs, n: 4, padR: 150, ink: cream, bg: choc,
+  Sediment.stackedArea({ host: el("stackedArea"), title: "Total assets", xs, n: 4, padR: 150, ink: cream, bg: choc,
     tokens: { surface, axis: cream, hair }, fmtK: M, fmtNZD: M, xLabel,
     bands: [{ values: [20,22,24,25,26,26].map(v => v*1e6), ti: 0, label: "cash" },
             { values: [180,200,240,300,360,420].map(v => v*1e6), ti: 1, label: "shares" },
@@ -89,7 +95,7 @@
 
   // Monthly savings: diverging columns with a target line.
   const net = [6.2,8.1,-1.4,7.5,5.3,6.9].map(v => v*1e6);
-  Sediment.columnChart({ host: el("columnChart"), posColor: pistachio, negColor: peach, ink: cream,
+  Sediment.columnChart({ host: el("columnChart"), title: "Monthly savings", fmtValue: M, posColor: pistachio, negColor: peach, ink: cream,
     tokens: { border }, target: 3e6, targetLabel: "goal", zeroLabel: "$0", tip: TIP,
     bars: net.map((v, i) => ({ value: v, label: MO[i] })),
     tipHTML: i => '<div class="row"><span>net</span><span>' + M(net[i]) + '</span></div>' });
@@ -97,13 +103,14 @@
   // Holdings: proportional segments with connector labels.
   const holds = [["Fudge Factory",60e6,0],["Macaron Mills",180e6,1],["Praline Partners",520e6,2],["Sorbet Co",90e6,3]];
   const holdTotal = holds.reduce((a, r) => a + r[1], 0);
-  Sediment.segmentedBar({ host: el("segmentedBar"), n: 5, total: holdTotal, ink: cream,
+  Sediment.segmentedBar({ host: el("segmentedBar"), title: "Holdings", fmtValue: M, n: 5, total: holdTotal, ink: cream,
     tokens: { border, hair }, connectors: true, tip: TIP,
     segments: holds.map(r => ({ label: r[0], value: r[1], ti: r[2],
       tipHTML: '<div class="t">' + r[0] + '</div><div class="row"><span>' + M(r[1]) + '</span></div>' })) });
 
   // Invested vs value: textured area under a value line.
-  Sediment.barLineChart({ host: el("barLineChart"), xs, ti: 1, ink: cream,
+  Sediment.barLineChart({ host: el("barLineChart"), title: "Invested vs value",
+    areaLabel: "invested", lineLabel: "value", xs, ti: 1, ink: cream,
     tokens: { axis: cream, hair, page: choc }, fmtK: M, xLabel, H: 250, padB: 44,
     bars: [40,110,190,270,340,400].map(v => v*1e6),
     line: [40,120,230,360,500,610].map(v => v*1e6) });

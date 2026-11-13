@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="176" viewBox="0 0 720 176" role="img" aria-label="Suggested palette: Cream #edf3d7, Chocolate #3e332f, Pistachio #81bb8b, Peach #e88b7d. Contrast on Chocolate: Cream 10.7:1, Pistachio 5.48:1, Peach 4.90:1." style="font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace">
+<style>text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; font-variant-numeric: tabular-nums; }</style>
+<rect width="720" height="176" fill="#3e332f"/>
+<g fill="#edf3d7">
+<rect x="24" y="24" width="150" height="72" rx="4" fill="#edf3d7"/>
+<rect x="192" y="24" width="150" height="72" rx="4" fill="#3e332f" stroke="#edf3d7" stroke-opacity="0.5"/>
+<rect x="360" y="24" width="150" height="72" rx="4" fill="#81bb8b"/>
+<rect x="528" y="24" width="150" height="72" rx="4" fill="#e88b7d"/>
+<text x="24" y="120">Cream</text><text x="24" y="138" opacity="0.75">#edf3d7 · ink</text><text x="24" y="156" opacity="0.75">10.7:1</text>
+<text x="192" y="120">Chocolate</text><text x="192" y="138" opacity="0.75">#3e332f · background</text>
+<text x="360" y="120">Pistachio</text><text x="360" y="138" opacity="0.75">#81bb8b · gain</text><text x="360" y="156" opacity="0.75">5.48:1</text>
+<text x="528" y="120">Peach</text><text x="528" y="138" opacity="0.75">#e88b7d · loss</text><text x="528" y="156" opacity="0.75">4.90:1</text>
+</g>
+</svg>
