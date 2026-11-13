@@ -233,3 +233,18 @@ test("every chart svg carries the sediment class the CSS keys on", () => {
   const { svg } = example();
   assert.equal(svg.getAttribute("class"), "sediment");
 });
+
+test("barLineChart without stacks keeps its area above the x axis", () => {
+  // The axis zooms to the data (here about 90 to 130), so 0 is far below the plot. The
+  // area used to fill down to y(0), and its texture spilled under the axis.
+  const six = xs.slice(0, 6);
+  const h = host();
+  S.barLineChart({ host: h, xs: six, ink: "#222", xLabel, fmtK: String, H: 230, padB: 26,
+    bars: [100, 102, 105, 108, 110, 112], line: [101, 104, 108, 112, 120, 125] });
+  const axisY = 230 - 26;
+  const area = h.querySelector("svg").querySelectorAll("path")
+    .find(p => /Z$/.test(p.getAttribute("d") || ""));
+  assert.ok(area, "an area path is drawn");
+  const ys = area.getAttribute("d").match(/-?\d+(\.\d+)?/g).map(Number).filter((_, i) => i % 2 === 1);
+  assert.ok(Math.max(...ys) <= axisY + 0.5, "lowest area point " + Math.max(...ys) + " is below the axis at " + axisY);
+});

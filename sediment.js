@@ -1126,10 +1126,13 @@
         for (let xi = 0; xi < xs.length; xi++) lower[xi] = upper[xi];
       });
     } else {
-      // Single aggregate invested area.
-      const upper = xs.map((_, xi) => (bars[xi] > 0 ? bars[xi] : 0));
+      // Single aggregate invested area. The axis here is zoomed to the data, so 0 can sit
+      // below the plot. Fill down to the axis floor instead, or the texture spills under
+      // the x axis.
+      const floor = Math.max(0, yLo);
+      const upper = xs.map((_, xi) => (bars[xi] > floor ? bars[xi] : floor));
       const fill = texture(svg, cfg.ti || 0, n, ink, { bg: cfg.bg });
-      svg.appendChild(svgEl("path", { d: areaPath(upper, xs.map(() => 0)), fill }));
+      svg.appendChild(svgEl("path", { d: areaPath(upper, xs.map(() => floor)), fill }));
     }
     // Value/return line.
     const pts = xs.map((t, i) => has(line[i]) ? [x(t), y(line[i])] : null);
