@@ -1,51 +1,46 @@
 # Sediment
 
-Sediment is a chart library for web apps. It is one JavaScript file with no
-dependencies and no build step. You copy it into your app, pass it numbers
-and colours, and it draws an SVG chart in an element you choose.
+Sediment draws SVG charts in a web page. It is a single JavaScript file with no
+dependencies and no build step. Copy it into your app, call a builder with your
+numbers and colours, and it draws the chart inside the element you pass it.
 
-Its real offer is a small charting language: a set of rules for drawing
-charts that read cleanly, in print or on screen, with or without colour.
-Take the code, or just take the rules.
+The charts follow a fixed set of drawing rules, listed under Design. The rules
+work without the code.
 
 ![Two cards from a personal finance dashboard. On a chocolate card, a stacked area shows total assets over 2025: property, index funds, KiwiSaver, cash and shares, each in its own mint texture and named at the right with its share and value. Below, on a mint card, a segmented bar splits the same assets by how fast they can be reached: instant, days and locked, with stepped labels.](images/hero.svg)
 
-*Synthetic data in NZD. Two cards from a personal finance dashboard. The
-first sits on chocolate, the second flips to mint.*
+*Two cards from a personal finance dashboard, drawn from synthetic NZD figures.
+The second card has a mint background.*
 
-## The design language
+## Design
 
-These are the rules every Sediment chart follows. They work without the
-library too.
+Every Sediment chart follows these rules.
 
-- **Texture before colour.** Bands and segments are told apart by a pattern
-  of marks, squares on a grid or dots on a hex grid. Mark spacing follows the
-  value, so small parts are dense and the largest part is solid. A chart reads
-  in greyscale, on a photocopier and for readers who do not see colour the
-  usual way.
-- **Colour means something.** Ink draws the data. Colour is kept for meaning:
-  a gain, a loss, a plan against what happened. In the suggested palette that
-  is Pistachio for up and Peach for down. Nothing is coloured for decoration.
-- **Labels on the data, not in a legend.** Each line and band is named at its
-  right end, with its latest value. Nobody has to match a swatch to a key.
-- **Range frames.** With `rangeFrame` the y axis is drawn only as far as the
-  data goes, so the axis itself shows the range. Otherwise a dotted hairline
-  grid sits behind the data.
-- **Reference lines and events.** A goal, a target or a limit is a dashed line
-  with its name. A moment, such as "now", is a dotted vertical mark.
-- **Honest gaps.** A missing value leaves a gap. It is never drawn as zero.
-- **Cards that flip.** Labels take the text colour of the element a chart
-  sits in, and you pass the ink for its marks. Swap the two and a chart moves
-  from a dark card to a light one. The hero above uses both.
+- Bands and segments are filled with textures, not colours: squares on a grid or
+  dots on a hex grid. The gap between marks grows with the value, and the largest
+  band is solid. The charts still read in greyscale and for colour-blind readers.
+- The data is drawn in one ink colour. A second colour marks a gain or a loss. In
+  the suggested palette, gains are Pistachio and losses are Peach.
+- Each line and band is labelled at its right-hand end with its name and latest
+  value. There is no legend.
+- With `rangeFrame`, the y axis runs only from the lowest value to the highest.
+  Without it, a dotted grid sits behind the data.
+- A goal, target or limit is a labelled dashed line. An event, such as "now", is a
+  dotted vertical line.
+- A missing value leaves a gap in the line. Sediment never draws it as zero.
+- Labels use the text colour of the element that holds the chart, and you pass the
+  colour for the marks. To move a chart from a dark card to a light one, swap the
+  two. The image above shows both.
 
 ### Type
 
-Sediment ships no fonts and no colours. The charts here use two free fonts
-from Google Fonts: Fragment Mono for numbers and labels, so digits line up,
-and Rock Salt, a handwritten face, for card titles. Labels inherit your page's
-font, so any font works.
+Sediment ships no fonts. Labels use your page's font. The images here use two free
+Google fonts: Fragment Mono for labels and numbers, because its digits line up, and
+Rock Salt, a handwritten face, for card titles.
 
-### Suggested palette
+### Palette
+
+Sediment ships no colours. The images here use four.
 
 ![Swatches of the suggested palette: Mint, Chocolate, Pistachio and Peach, each with its hex value, its role and its contrast on Chocolate.](images/palette.svg)
 
@@ -56,9 +51,8 @@ font, so any font works.
 | Pistachio | `#81bb8b` | gain | 5.48:1 |
 | Peach | `#e88b7d` | loss | 4.90:1 |
 
-Hairlines are Mint at 50% opacity, a tint rather than a fifth colour. On a
-mint card the roles swap: Chocolate is the ink and Mint the background.
-Contrast is measured with the WCAG 2 formula.
+Hairlines are Mint at 50% opacity. On a mint card, Chocolate is the ink and Mint
+the background. Contrast figures use the WCAG 2 formula.
 
 ## A minimal example
 
@@ -101,16 +95,16 @@ Contrast is measured with the WCAG 2 formula.
 
 ![The chart this code draws: a solid mint line named saved rising from $24k in January to $33k in July with a gap in June, then a dashed pistachio line named plan rising to $57k next January, across a dashed goal line at $55k. A dotted line marks July as now.](images/example.svg)
 
-The June value is `null`, so the saved line breaks there. The plan is dashed
-as well as coloured, so the two lines differ in shape. Each is named at its
-right end. `title`, `fmtValue` and `fmtX` feed the description Sediment
-writes for screen readers (see Accessibility).
+The June value is `null`, so the saved line has a gap there. The plan line is
+dashed as well as coloured, so it differs from the saved line in shape. Each line
+is labelled at its right-hand end. `title`, `fmtValue` and `fmtX` feed the text
+description that screen readers announce (see Accessibility).
 
 ## Install
 
 There is no npm package. Copy `sediment.js` and `sediment.css` into your app
 and load them as in the example. `sediment.js` adds one global,
-`window.Sediment`. Of `sediment.css`, only the `svg text` rule is required.
+`window.Sediment`. Only the `svg text` rule in `sediment.css` is required.
 Without it, labels render black at the wrong size. The other rules draw the
 keyboard focus ring, style the optional data table, and handle forced colours
 and reduced motion.
@@ -124,7 +118,7 @@ git submodule update --remote vendor/sediment   # later, to update
 
 Open `demo.html` in a browser to see every builder draw from live code.
 
-## How it fits into your app
+## Using it in an app
 
 Every builder takes resolved values: CSS colour strings, plain numbers, and
 formatter callbacks for text. Sediment never reads your theme, global state or
@@ -199,34 +193,33 @@ funds, stacked with one texture each, and the line is what they are worth.
 ### smallMultiples
 One panel per series on one shared time axis. Use it when series differ in
 scale, or when the question is each one's shape. Each panel prints its own min
-and max. `shared: true` puts every panel on one scale. Here a mortgage near
-$400k, in Peach, sits beside three balances that grow.
+and max. `shared: true` puts every panel on one scale. Here a mortgage of about
+$400k, drawn in Peach, sits above three balances that grow.
 
 ![Four stacked panels: mortgage owed falling from $420k to $403.5k in peach, index funds and KiwiSaver rising in pistachio, and cash dipping in mint.](images/smallMultiples.svg)
 
 ## Accessibility
 
-A Sediment chart is built to read without colour, without a mouse and without
-sight.
+Sediment charts work without colour, without a mouse and without sight.
 
-- **Without colour.** Textures and dashes carry identity, labels sit on the
-  data, and forced-colour modes (Windows high contrast) draw everything in the
-  system colours.
-- **Without sight.** Every `<svg>` gets `role="img"`, an `aria-label` from
-  `title`, and a `<desc>` written from the data: the chart kind, the series,
-  the x range, each series' latest, low and high value with when, plus
-  reference lines, events and gaps. `desc` replaces or edits it.
-  `table: true` adds the numbers as a collapsed data table.
-- **Without a mouse.** A chart with a tooltip takes the keyboard: Tab to
-  focus, arrows to step, Home and End, Escape to close. A polite live region
-  reads each step.
-- **Motion.** Sediment animates nothing, and `sediment.css` stops any
-  animation a page adds under `prefers-reduced-motion`.
+- Textures and dashes tell series apart, and labels sit on the data. In
+  forced-colour modes such as Windows high contrast, `sediment.css` draws
+  everything in the system colours.
+- Each `<svg>` has `role="img"`, an `aria-label` taken from `title`, and a
+  `<desc>` written from the data. The description gives the chart type, the
+  series, the x range, and each series' latest, lowest and highest value with its
+  date. It also lists reference lines, events and gaps. `desc` replaces or edits
+  it. `table: true` adds the numbers as a collapsed data table.
+- A chart with a tooltip responds to the keyboard. Tab focuses it, the arrow keys
+  step through points, Home and End jump to the ends, and Escape closes the
+  tooltip. A polite live region reads out each step.
+- Sediment animates nothing. Under `prefers-reduced-motion`, `sediment.css` also
+  stops any animation the page adds.
 
-What is not verified: nobody has tried these charts with a screen reader or in
-Windows high contrast. The tests check the markup and key handling in node,
-against a stand-in for the browser DOM. In NVDA and JAWS browse mode the arrow
-keys may not reach the chart. The generated description is in English.
+Not verified: nobody has tested these charts with a screen reader or in Windows
+high contrast. The tests check the markup and the key handling in node, against a
+stand-in for the browser DOM. In NVDA and JAWS browse mode the arrow keys may not
+reach the chart. The description is in English only.
 
 ## Limits
 
