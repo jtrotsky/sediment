@@ -165,10 +165,9 @@ level, and the line is the average risk, weighted by value.
 ### lineChart
 Lines over time, each named at its end. Opt in to a range frame
 (`rangeFrame`), latest values (`endValue`), reference lines (`refs`) and
-events (`events`). Here net worth is one pistachio line, named by its latest
-value.
+events (`events`). Here net worth is one line, named by its latest value.
 
-![A pistachio line of net worth rising from $12k in January to $71.5k in December, named at its end.](images/lineChart.svg)
+![A line of net worth rising from $12k in January to $71.5k in December, named at its end.](images/lineChart.svg)
 
 ### stackedArea
 Stacked bands over time, each a texture, each labelled on the right with its
@@ -195,7 +194,7 @@ A textured area for one measure with a line over it for another, so the gap
 between them reads at a glance. Here the area is the money put into three
 funds, stacked with one texture each, and the line is what they are worth.
 
-![Three stacked pistachio-textured bands of money invested, rising from $50k to $72k, with a pistachio line of their value rising from $50.5k to $78k above them.](images/barLineChart.svg)
+![Three stacked textured bands of money invested, rising from $50k to $72k, with a line of their value rising from $50.5k to $78k above them.](images/barLineChart.svg)
 
 ### smallMultiples
 One panel per series on one shared time axis. Use it when series differ in
