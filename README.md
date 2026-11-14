@@ -1,19 +1,64 @@
 # Sediment
 
-Sediment draws small SVG charts in the browser. It is one JavaScript file with
-no dependencies and no build step, and it tells series apart by texture
-instead of colour. Each chart describes its data to screen readers, and its
-tooltip works from the keyboard.
+Sediment is a chart library for web apps. It is one JavaScript file with no
+dependencies and no build step. You copy it into your app, pass it numbers
+and colours, and it draws an SVG chart in an element you choose.
 
-![Two charts from a personal finance dashboard, in one ink colour on chocolate. A stacked area shows total assets over 2025, with property, index funds, KiwiSaver, cash and shares each in its own texture and named with its share and value. Under it, a segmented bar splits the same assets by how quickly they can be reached: instant, days and locked.](images/hero.svg)
+Its real offer is a small charting language: a set of rules for drawing
+charts that read cleanly, in print or on screen, with or without colour.
+Take the code, or just take the rules.
 
-*Synthetic data in NZD. These are two cards from a personal finance
-dashboard, drawn the way it draws them. Each band and segment wears its own
-texture and is named on the chart. The largest is solid.*
+![Two cards from a personal finance dashboard. On a chocolate card, a stacked area shows total assets over 2025: property, index funds, KiwiSaver, cash and shares, each in its own mint texture and named at the right with its share and value. Below, on a mint card, a segmented bar splits the same assets by how fast they can be reached: instant, days and locked, with stepped labels.](images/hero.svg)
 
-The style follows Tufte: a dotted hairline grid or a range-frame axis, and
-labels placed on the data rather than in a legend. Sediment ships no colours.
-You pass every colour in, so it fits any theme.
+*Synthetic data in NZD. Two cards from a personal finance dashboard. The
+first sits on chocolate, the second flips to mint.*
+
+## The design language
+
+These are the rules every Sediment chart follows. They work without the
+library too.
+
+- **Texture before colour.** Bands and segments are told apart by a pattern
+  of marks, squares on a grid or dots on a hex grid. Mark spacing follows the
+  value, so small parts are dense and the largest part is solid. A chart reads
+  in greyscale, on a photocopier and for readers who do not see colour the
+  usual way.
+- **Colour means something.** Ink draws the data. Colour is kept for meaning:
+  a gain, a loss, a plan against what happened. In the suggested palette that
+  is Pistachio for up and Peach for down. Nothing is coloured for decoration.
+- **Labels on the data, not in a legend.** Each line and band is named at its
+  right end, with its latest value. Nobody has to match a swatch to a key.
+- **Range frames.** With `rangeFrame` the y axis is drawn only as far as the
+  data goes, so the axis itself shows the range. Otherwise a dotted hairline
+  grid sits behind the data.
+- **Reference lines and events.** A goal, a target or a limit is a dashed line
+  with its name. A moment, such as "now", is a dotted vertical mark.
+- **Honest gaps.** A missing value leaves a gap. It is never drawn as zero.
+- **Cards that flip.** Labels take the text colour of the element a chart
+  sits in, and you pass the ink for its marks. Swap the two and a chart moves
+  from a dark card to a light one. The hero above uses both.
+
+### Type
+
+Sediment ships no fonts and no colours. The charts here use two free fonts
+from Google Fonts: Fragment Mono for numbers and labels, so digits line up,
+and Rock Salt, a handwritten face, for card titles. Labels inherit your page's
+font, so any font works.
+
+### Suggested palette
+
+![Swatches of the suggested palette: Mint, Chocolate, Pistachio and Peach, each with its hex value, its role and its contrast on Chocolate.](images/palette.svg)
+
+| Colour | Hex | Role | Contrast on Chocolate |
+| --- | --- | --- | --- |
+| Mint | `#edf3d7` | ink, marks, lines | 10.7:1 |
+| Chocolate | `#3e332f` | background | |
+| Pistachio | `#81bb8b` | gain | 5.48:1 |
+| Peach | `#e88b7d` | loss | 4.90:1 |
+
+Hairlines are Mint at 50% opacity, a tint rather than a fifth colour. On a
+mint card the roles swap: Chocolate is the ink and Mint the background.
+Contrast is measured with the WCAG 2 formula.
 
 ## A minimal example
 
@@ -54,43 +99,40 @@ You pass every colour in, so it fits any theme.
 </script>
 ```
 
-![The chart this code draws: a solid line named saved rising from $24k in January to $33k in July with a gap in June, then a dashed line named plan rising to $57k next January, across a dashed goal line at $55k. A dotted line marks July as now.](images/example.svg)
+![The chart this code draws: a solid mint line named saved rising from $24k in January to $33k in July with a gap in June, then a dashed pistachio line named plan rising to $57k next January, across a dashed goal line at $55k. A dotted line marks July as now.](images/example.svg)
 
-*Synthetic data.*
-
-The June value is `null`, so the saved line breaks there instead of dropping
-to zero. The plan is dashed, so the two lines differ in shape as well as
-colour. Each is named at its right end. `rangeFrame` draws the y axis only as
-far as the data goes. `title` names the chart for screen readers, and
-`fmtValue` and `fmtX` format the numbers and dates in the description
-Sediment writes, so it reads "$57,000 (Jan 2027)" rather than "57,000 (Jan)"
-(see Accessibility).
+The June value is `null`, so the saved line breaks there. The plan is dashed
+as well as coloured, so the two lines differ in shape. Each is named at its
+right end. `title`, `fmtValue` and `fmtX` feed the description Sediment
+writes for screen readers (see Accessibility).
 
 ## Install
 
-There is no npm package. Copy the two files into your project and load them:
+There is no npm package. Copy `sediment.js` and `sediment.css` into your app
+and load them as in the example. `sediment.js` adds one global,
+`window.Sediment`. Of `sediment.css`, only the `svg text` rule is required.
+Without it, labels render black at the wrong size. The other rules draw the
+keyboard focus ring, style the optional data table, and handle forced colours
+and reduced motion.
 
-```html
-<link rel="stylesheet" href="sediment.css">
-<script src="sediment.js"></script>
-```
-
-`sediment.js` adds one global, `window.Sediment`. `sediment.css` holds the
-companion styles. Only its `svg text` rule is required. Without it, labels
-render black at the wrong size. Text colour is inherited, so set `color` on
-the chart host and every label follows. The other rules draw the keyboard
-focus ring, style the optional data table, and handle forced colours and
-reduced motion. Keep them unless you replace them with your own.
-
-To track the repo and pull updates, add it as a git submodule:
+To pull updates, add the repo as a git submodule:
 
 ```bash
 git submodule add https://github.com/jtrotsky/sediment.git vendor/sediment
-# later, to update:
-git submodule update --remote vendor/sediment
+git submodule update --remote vendor/sediment   # later, to update
 ```
 
-Open `demo.html` in a browser to see all seven builders draw from live code.
+Open `demo.html` in a browser to see every builder draw from live code.
+
+## How it fits into your app
+
+Every builder takes resolved values: CSS colour strings, plain numbers, and
+formatter callbacks for text. Sediment never reads your theme, global state or
+any DOM beyond the host you give it. You write a thin adapter that resolves
+your theme (for example with `getComputedStyle`) and calls the builders.
+
+Each builder measures the host's width (at least 320 px), clears the host and
+appends a fresh `<svg>`. To redraw, call it again.
 
 ## Which chart
 
@@ -108,221 +150,95 @@ Pick by the question, not the shape of the data.
 
 Under about twenty numbers, a table usually beats any of them.
 
-## Accessibility
-
-A Sediment chart is built to read without colour, without a mouse and without
-sight. The tests in `test/` check the generated markup and the key handling.
-The CSS rules (focus ring, forced colours, reduced motion) have not been seen
-in a browser. The last part of this section lists what else is unverified.
-
-### Without colour
-
-- **Texture, not hue.** `stackedArea`, `segmentedBar` and `barLineChart` fill
-  each band with a pattern of marks. A band's texture index `ti` picks the
-  shape: squares on a rectangular grid for even indexes, circles on a
-  hexagonal grid for odd ones. In `stackedArea` and `segmentedBar` the band's
-  value sets the spacing. The smallest packs its marks with gaps of 15% of a
-  mark, and larger values get wider gaps. The largest band, and
-  the last of `n`, is solid. `Sediment.chip()` draws the same pattern as a
-  small swatch for a table row.
-- **Dashes for lines.** A line series can set `dash`, a stroke-dasharray, so
-  two lines differ in shape.
-- **Direct labels.** Lines and stacked bands are named at their right ends.
-  There is no legend to match against a colour.
-- **Honest gaps.** A `null` value in a line leaves a gap. It is never drawn
-  as zero.
-- **Forced colours.** In Windows high contrast and other forced-colour modes,
-  `sediment.css` draws every line, mark and label in the system text colour
-  (`CanvasText`) and every background in the system background colour
-  (`Canvas`). Series stay apart because they differ by texture and dash.
-
-### Without sight
-
-Every builder marks its `<svg>` as an image with a name and a description.
-This is the README example above, as rendered:
-
-```html
-<svg viewBox="0 0 672 230" width="100%" height="230" class="sediment"
-     role="img" aria-label="House deposit, saved and planned"
-     aria-describedby="sediment-1-desc">
-  <desc id="sediment-1-desc">Line chart, 2 series: saved, plan. Jan 2026 to
-    Jan 2027. saved: latest $33,000 (Jul 2026), low $24,000 (Jan 2026), high
-    $33,000 (Jul 2026), no data for 7 points. plan: latest $57,000 (Jan 2027),
-    low $33,000 (Jul 2026), high $57,000 (Jan 2027), no data for 6 points.
-    Reference line: goal $55,000. Event: now (Jul 2026).</desc>
-  ...
-```
-
-(Line breaks added. The `<desc>` text is one line.)
-
-- **The name** is `title`. Without one it is the chart kind, such as
-  "Line chart".
-- **The description** gives the chart kind, the series names, the x range,
-  and each series' latest, low and high value with when. It adds reference
-  lines, events and missing data. Bar, segment and dot charts list their
-  items instead. Pass `desc` as a string to replace it, or as a function to
-  edit it: `desc: auto => "The plan reaches the goal in December. " + auto`.
-- **Formats.** Values use `fmtValue`, else the builder's own `fmtK` or
-  `fmtNZD`. x values use `fmtX`, else `xLabel(t, true)`.
-- **No `<title>` element.** Browsers show an SVG's `<title>` as a native hover
-  tooltip over the whole chart. It would sit on top of Sediment's own tooltip,
-  so the name goes in `aria-label` instead.
-- **The numbers as a table.** `table: true` adds a collapsed
-  `<details>` after the chart, holding a `<table>` with a caption, one row per
-  x value or item, and "no data" for gaps. Pass a string to name its summary
-  (default "Data table"). It is off by default because it adds an element
-  under the chart and so changes your layout.
-- **Texture chips** from `Sediment.chip()` carry `aria-hidden="true"`. They sit
-  beside their own words and have nothing to add.
-- **`Sediment.describe(svg, { title, desc })`** does the same for an SVG you
-  draw yourself with `Sediment.frame()`.
-
-### Without a mouse
-
-A chart with a tooltip (`tip` plus `tipHTML`) also opens it from the keyboard.
-Pointer behaviour is unchanged.
-
-| Key | Action |
-| --- | --- |
-| Tab | Focus the chart (`tabindex="0"`) |
-| Right or Down arrow | Next point, column, segment or dot |
-| Left or Up arrow | Previous one |
-| Home, End | First, last |
-| Escape | Close the tooltip |
-
-Time-series charts move the same hairline the pointer moves. Column, segment
-and dot charts draw a ring round the active item. A visually hidden
-`aria-live="polite"` region reads out the tooltip's text, or the table row
-when the tooltip has none. Moving focus away closes the tooltip. The focus
-ring is a 2 px outline in the chart's text colour, shown for keyboard focus
-only (`:focus-visible`). The description ends with a one-line key guide.
-
-`keyboard: false` turns this off. `keyboard: true` turns it on for a chart
-with no tooltip: the keys then move the hairline or ring, and the live
-region reads each row.
-
-### Motion
-
-Sediment animates nothing. Under `prefers-reduced-motion: reduce`,
-`sediment.css` also turns off any transition or animation a page adds to the
-chart or its tooltip.
-
-### What is not done or not verified
-
-- **No assistive technology testing.** Nobody has tried these charts with a
-  screen reader (NVDA, JAWS, VoiceOver, TalkBack) or with Windows high
-  contrast. The tests check the markup and the key handling in node, against
-  a stand-in for the browser DOM, not in a browser.
-- **Browse mode may take the arrow keys.** NVDA and JAWS read a page in browse
-  mode, where the arrow keys move the reading cursor and never reach the
-  chart. A user may need to switch to focus mode. The description and the
-  table do not depend on the keys.
-- **One stop per x value.** On a chart with several series, each key press
-  covers every series at that x, as the tooltip does. There is no way to step
-  along one series.
-- **English words.** The generated description uses fixed English words
-  ("latest", "low", "no data"). Replace it with `desc` for other languages.
-- **No contrast checks.** You choose the colours, so you own the contrast. The
-  suggested palette below measures 10.7:1 for Cream on Chocolate (WCAG 2
-  formula).
-
-## Suggested palette
-
-Sediment ships no colours of its own. If you want a starting point, this is the
-warm, high-contrast set the charts in this README were drawn with.
-
-![Swatches of the suggested palette: Cream, Chocolate, Pistachio and Peach, each with its hex value and contrast on Chocolate.](images/palette.svg)
-
-| Colour | Hex | Role | Contrast on Chocolate |
-| --- | --- | --- | --- |
-| Cream | `#edf3d7` | ink, marks, lines | 10.7:1 |
-| Chocolate | `#3e332f` | background | |
-| Pistachio | `#81bb8b` | gain | 5.48:1 |
-| Peach | `#e88b7d` | loss | 4.90:1 |
-
-Hairlines are Cream at 50% opacity, a tint rather than a separate colour.
-
 ## The charts
 
-Each chart below is a card from the same personal finance dashboard, with
-synthetic data in NZD. The company names are made up.
+Each is a card from the same personal finance dashboard, with synthetic data
+in NZD. The company names are made up.
 
 ### dotPlot
-Items on a shared ordinal axis. Position carries the meaning, dot area carries
-the amount, and a solid line marks the average. Here each fund sits at its
-risk level, and the line marks the average risk, weighted by value.
+Items on a shared ordinal axis. Position carries the meaning, dot area the
+amount, and a solid line marks the average. Here each fund sits at its risk
+level, and the line is the average risk, weighted by value.
 
-![dotPlot](images/dotPlot.svg)
+![A dot plot of six funds placed from cash to aggressive, each dot sized by value, with a vertical line at the value-weighted average between balanced and growth.](images/dotPlot.svg)
 
 ### lineChart
-Lines over a time series, each named at its end. Opt in to a range-frame axis
-(`rangeFrame`), latest values (`endValue`), reference lines (`refs`) and events
-(`events`). Here net worth is one line, named by its latest value. The
-minimal example above uses the opt-ins.
+Lines over time, each named at its end. Opt in to a range frame
+(`rangeFrame`), latest values (`endValue`), reference lines (`refs`) and
+events (`events`). Here net worth is one pistachio line, named by its latest
+value.
 
-![lineChart](images/lineChart.svg)
+![A pistachio line of net worth rising from $12k in January to $71.5k in December, named at its end.](images/lineChart.svg)
 
 ### stackedArea
-Stacked bands over time, each band a texture, with each band's share and latest
-value labelled on the right. Here grocery spend splits into five groups.
-Texture density follows each group's latest value, so only the largest is
-solid.
+Stacked bands over time, each a texture, each labelled on the right with its
+share and latest value. Here grocery spend splits into five groups. Texture
+density follows each group's latest value, so only the largest is solid.
 
-![stackedArea](images/stackedArea.svg)
+![A stacked area of grocery spend in five mint-textured groups, from no receipt to produce, with meat and dairy solid as the largest.](images/stackedArea.svg)
 
 ### columnChart
 Columns on a shared baseline, positive and negative, with an optional target
 line. Here each month's savings meet a $2,000 target. Months that lost money
-go below the line in a second colour, and the month still running is faint.
+drop below the line in Peach, and the month still running is faint.
 
-![columnChart](images/columnChart.svg)
+![Twelve pistachio columns of monthly savings against a dotted $2k target line. August drops below zero in peach. December is faint.](images/columnChart.svg)
 
 ### segmentedBar
-Proportional segments, texture-coded, with optional stepped connector labels.
-Here each segment is one holding in a share portfolio.
+Proportional segments, texture-coded, with optional stepped labels. Here each
+segment is one holding in a share portfolio, on a mint card.
 
-![segmentedBar](images/segmentedBar.svg)
+![On a mint card, a chocolate segmented bar of five holdings, from Kauri Timber at 8% to Global Index ETF at 45%, with stepped labels.](images/segmentedBar.svg)
 
 ### barLineChart
 A textured area for one measure with a line over it for another, so the gap
 between them reads at a glance. Here the area is the money put into three
 funds, stacked with one texture each, and the line is what they are worth.
 
-![barLineChart](images/barLineChart.svg)
+![Three stacked pistachio-textured bands of money invested, rising from $50k to $72k, with a pistachio line of their value rising from $50.5k to $78k above them.](images/barLineChart.svg)
 
 ### smallMultiples
-One panel per series, stacked on one shared time axis. Use it when series
-differ in scale, or when the question is each one's shape. Each panel prints its
-own min and max. `shared: true` puts every panel on one scale when the question
-is level. Here four balances move on very different scales: a mortgage near
-$400k beside cash near $20k.
+One panel per series on one shared time axis. Use it when series differ in
+scale, or when the question is each one's shape. Each panel prints its own min
+and max. `shared: true` puts every panel on one scale. Here a mortgage near
+$400k, in Peach, sits beside three balances that grow.
 
-![smallMultiples](images/smallMultiples.svg)
+![Four stacked panels: mortgage owed falling from $420k to $403.5k in peach, index funds and KiwiSaver rising in pistachio, and cash dipping in mint.](images/smallMultiples.svg)
 
-## How it works
+## Accessibility
 
-Every builder takes resolved values. Colours are CSS colour strings, data is
-plain numbers, and text comes from formatter callbacks. The module never reads
-your theme, any DOM beyond the host you give it, or any global state. You write
-a thin adapter that resolves your theme (for example with `getComputedStyle`)
-and feeds these builders. That keeps it portable between projects.
+A Sediment chart is built to read without colour, without a mouse and without
+sight.
 
-Each builder measures the host's width (at least 320 px), clears the host and
-appends a fresh `<svg>`. To redraw, call it again.
+- **Without colour.** Textures and dashes carry identity, labels sit on the
+  data, and forced-colour modes (Windows high contrast) draw everything in the
+  system colours.
+- **Without sight.** Every `<svg>` gets `role="img"`, an `aria-label` from
+  `title`, and a `<desc>` written from the data: the chart kind, the series,
+  the x range, each series' latest, low and high value with when, plus
+  reference lines, events and gaps. `desc` replaces or edits it.
+  `table: true` adds the numbers as a collapsed data table.
+- **Without a mouse.** A chart with a tooltip takes the keyboard: Tab to
+  focus, arrows to step, Home and End, Escape to close. A polite live region
+  reads each step.
+- **Motion.** Sediment animates nothing, and `sediment.css` stops any
+  animation a page adds under `prefers-reduced-motion`.
+
+What is not verified: nobody has tried these charts with a screen reader or in
+Windows high contrast. The tests check the markup and key handling in node,
+against a stand-in for the browser DOM. In NVDA and JAWS browse mode the arrow
+keys may not reach the chart. The generated description is in English.
 
 ## Limits
 
 - **Browser only.** The builders need a DOM. There is no server-side renderer.
-- **Time on the x axis is monthly.** The time-series builders take `xs` as
-  epoch milliseconds and place ticks on month boundaries. Other units are not
-  supported.
-- **Money defaults.** `stackedArea` labels values as dollars and title-cases
-  band names unless you pass `fmtNZD`. `columnChart` labels its baseline `$0`
-  unless you pass `zeroLabel`.
-- **Tests, but no CI and no releases.** `node --test test/*.test.js` runs the
-  tests with no packages to install (Node 18 or later). They run in node
-  against a DOM stand-in, not in a browser. There is no CI and there are no
-  version tags.
+- **Monthly time axis.** Time-series builders take `xs` as epoch milliseconds
+  and tick on month boundaries.
+- **Money defaults.** `stackedArea` labels values as dollars unless you pass
+  `fmtNZD`. `columnChart` labels its baseline `$0` unless you pass
+  `zeroLabel`.
+- **Tests, but no CI and no releases.** `node --test test/a11y.test.js` runs
+  them with nothing to install (Node 18 or later).
 
 ## Builder reference
 
@@ -428,4 +344,5 @@ tokens:{ axis, hair, page, ref }, fmtK, xLabel, tip, tipHTML
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). The README images embed Fragment Mono and Rock
+Salt, which keep their own licences.

@@ -1001,7 +1001,7 @@
       const rect = svgEl("rect", {
         x: cx - bw / 2, y: b.value >= 0 ? y(b.value) : y(0),
         width: bw, height: Math.abs(y(b.value) - y(0)) || 1, rx: 2,
-        fill: b.value >= 0 ? ink : cfg.negColor, opacity: b.faint ? 0.4 : 1 });
+        fill: b.value >= 0 ? (cfg.posColor || ink) : cfg.negColor, opacity: b.faint ? 0.4 : 1 });
       svg.appendChild(rect);
       const lb = svgEl("text", { x: cx, y: H - 8, "text-anchor": "middle" });
       lb.textContent = b.label;
